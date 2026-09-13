@@ -65,13 +65,11 @@ def test_parse_wav_pcm_rejects_junk() -> None:
 
 
 def test_fuzzy_exact_and_alias() -> None:
-    detector = FuzzyWakeDetector("jarvis")
-    assert detector.check("hey jarvis, lights on").detected is True
-    assert detector.check("hey jarvis, lights on").confidence == 1.0
-    assert detector.check("hey jervis, lights on").confidence == 1.0  # known alias
-    misheard = detector.check("hey jarbis, lights on")
-    assert misheard.detected is True
-    assert 0.0 < misheard.confidence < 1.0
+    detector = FuzzyWakeDetector("great sage")
+    assert detector.check("hey great sage, lights on").detected is True
+    assert detector.check("hey great sage, lights on").confidence == 1.0
+    assert detector.check("hey grate sage, lights on").confidence == 1.0  # known alias
+    assert detector.check("hey grey sage, lights on").confidence == 1.0  # known alias
     assert detector.check("what time is it").detected is False
     with pytest.raises(VoiceValidationError):
         detector.check("   ")

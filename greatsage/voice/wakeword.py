@@ -21,18 +21,16 @@ log = logging.getLogger("greatsage.voice.wakeword")
 
 FUZZY_RATIO = 0.78
 WAKE_ALIASES: tuple[str, ...] = (
-    "joris",
-    "charis",
-    "chavis",
-    "jar is",
-    "jaivis",
-    "jervis",
-    "jarvus",
-    "jarviz",
-    "javis",
-    "jairus",
-    "jarryst",
-    "chyrus",
+    "grayt sage",
+    "grate sage",
+    "great stage",
+    "great sedge",
+    "great siege",
+    "grey sage",
+    "grate stage",
+    "great sag",
+    "great sage",
+    "gray sage",
 )
 
 

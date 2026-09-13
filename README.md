@@ -102,7 +102,7 @@ Phase 5B adds controlled OpenCode delegation under full Great Sage authority:
 - **Full lifecycle**: `DelegationState` (`created → starting → running ⇄ waiting_for_permission → completing → completed/failed/cancelled/timed_out`), bounded SSE with malformed-event tolerance, timeout/cancellation/diff retrieval, session cleanup, and `DELEGATION_*` + `TOOL_*` audit events (no prompts, no secrets).
 - **CLI**: `greatsage delegation health|list|get <task_id>|cancel <task_id> [--json]` (same auth path as
 `greatsage agent`/`tools`).
-- **Tests**: 1035 passing (Sept 2026 baseline; incl. 55 delegation, 32 OpenCode),
+- **Tests**: 1050 passing (13 Sept 2026; incl. 55 delegation, 32 OpenCode),
   `ruff`/`mypy` clean.
 
 ## Development Phases

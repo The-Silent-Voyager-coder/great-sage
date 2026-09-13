@@ -154,5 +154,5 @@ non-completed state, runtime failure); `2` invalid prompt/configuration.
 - Approval tests are threaded (decision arriving while the waiter is in the
   decision window) to catch re-entrant-lock deadlocks — the `approval.py`
   snapshot-then-consume fix is covered by them.
-- Verification: `pytest`, `ruff check .`, `mypy jarvis`, config validate,
+- Verification: `pytest`, `ruff check .`, `mypy greatsage`, config validate,
   CLI smoke, tree clean, commit, stop.

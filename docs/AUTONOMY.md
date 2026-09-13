@@ -138,5 +138,5 @@ Exit codes: `0` ok/approved/verified, `1` execution/verification failure,
   linear ordering.
 - Approval tests assert fail-closed behavior: no flag → recorded
   `false`; non-draft → rejected; invalid plan → never approved.
-- Verification: `pytest`, `ruff check .`, `mypy jarvis`, config
+- Verification: `pytest`, `ruff check .`, `mypy greatsage`, config
   validate, CLI smoke, tree clean, commit, stop.

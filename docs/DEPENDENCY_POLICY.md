@@ -67,7 +67,7 @@ tolerance with stdlib `difflib`).
 
 `pyproject.toml [project.optional-dependencies] dev` holds `pytest`,
 `pytest-cov`, `mypy` + `types-PyYAML`, and `ruff`. Dev tooling never ships
-with the runtime package (wheel contains only the `jarvis` package).
+with the runtime package (wheel contains only the `greatsage` package).
 
 ## 7. Review Cadence
 

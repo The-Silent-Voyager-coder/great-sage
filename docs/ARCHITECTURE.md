@@ -662,9 +662,9 @@ from logs + task history.
 
 `greatsage/observability/logging.py`:
 
-- `setup_logging(cfg, logs_dir, console=True)` configures the `jarvis`
+- `setup_logging(cfg, logs_dir, console=True)` configures the `greatsage`
   logger: one JSON record per line to stdout and a rotating
-  `<logs_dir>/jarvis.log` (10 MB, `backupCount = retention_days`).
+  `<logs_dir>/greatsage.log` (10 MB, `backupCount = retention_days`).
 - Records carry `timestamp, level, logger, message, component, event_id,
   session_id, task_id` plus any extra context; correlation IDs are bound via
   `correlation()` context manager (context variables), so logs inside a

@@ -47,9 +47,9 @@ pytest                     # full suite (dev extra)
 pytest -m safety           # safety subset — must pass before any release
 pytest tests/opencode      # mock-server OpenCode integration
 pytest tests/unit/intelligence   # Phase 2 provider suite
-pytest --cov=jarvis --cov-report=term-missing
+pytest --cov=greatsage --cov-report=term-missing
 ruff check .               # linter
-mypy jarvis                # type checker (dev extra)
+mypy greatsage                # type checker (dev extra)
 ```
 
 Target: ≥80% coverage on `greatsage/` modules; 100% on `security/` decision paths.
@@ -214,13 +214,12 @@ Coverage:
   `ModuleNotFoundError: No module named 'tests.unit'`.
 - Version regression note: `greatsage --version` reports the source
   `greatsage.__version__` as authoritative — a stale or unrelated installed
-  distribution reusing the `jarvis` dist name must not mislabel running
+  distribution reusing the `great-sage` dist name must not mislabel running
   code (covered by `tests/integration/test_cli.py::test_version`).
 ## 6e. Phase 5B–10 baseline (delegation, autonomy, voice, vision, HUD, hardening)
 
-- **959 tests passing** (Sept 2026 baseline: `pytest tests -q` → 959 passed;
-  README's older "732" figure predates the Phase 6–10 suites), `ruff check
-  jarvis tests` clean, `mypy jarvis` clean (111 source files).- New suites since §6d: `tests/unit/delegation/` (models, manager, service),
+- **1050 tests passing** (13 Sept 2026: 1050 total), `ruff check
+  greatsage tests` clean, `mypy greatsage` clean (130 source files).- New suites since §6d: `tests/unit/delegation/` (models, manager, service),
   `tests/unit/planning/test_graph.py` + `test_verify.py` (Phase 7 DAG +
   verification gate), `tests/unit/voice/` (6 files, stub backends),
   `tests/unit/vision/` (7 files, stub backend, no OCR),
@@ -235,8 +234,8 @@ Coverage:
   grounding marker, metadata-only capture — no model downloads, no network.
 ## 6f. Roadmap baseline (scheduler, tools, telegram, embeddings, real voice)
 
-- **1035 tests passing** (Sept 2026: 959 + 76 new), `ruff` + `mypy` clean
-  (129 source files).
+- **1050 tests passing** (13 Sept 2026), `ruff` + `mypy` clean
+  (130 source files).
 - New: `tests/unit/scheduler/` (models, repo, tick executor),
   `tests/integration/test_cli_schedule.py`,
   `tests/unit/tools/test_network_tools.py` + `test_gui_tools.py`
