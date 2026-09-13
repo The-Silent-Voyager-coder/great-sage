@@ -306,6 +306,14 @@ greatsage tools health [--config PATH] [--json]               → service + mode
 greatsage tools execute ID [key=value ...] [--approve] [--json]
                         [--session-id SID] [--config PATH] → full pipeline
 greatsage briefing [--days N] [--content] [--config PATH] [--json]
+greatsage chat [--config PATH] [--text]           → conversation loop
+        (voice: mic → transcribe → generate → speak → repeat)
+        (text: type → generate → print → repeat; fallback when voice unavailable)
+greatsage voice health [--config PATH] [--json]   → voice subsystem health
+greatsage voice listen (--text TEXT | --audio-path PATH) [--session-id SID]
+        transcribe one bounded turn
+greatsage voice speak --text TEXT [--out PATH] [--session-id ID]
+        synthesize one bounded utterance
 greatsage schedule add|list|remove|tick|health [--config PATH] [--json]
 greatsage telegram health|listen [--once] [--for SECONDS] [--config PATH] [--json]
 ```
@@ -699,7 +707,8 @@ subsystem, or non-completed task state; `2` invalid input/configuration
   (`greatsage vision health|capture|describe`, `greatsage hud|status|dashboard`);
   vision has no `vision.*` config section yet — the service is
   config-independent (see merge-risk notes in the Phase 6–10 QA report).
-- Phase 6 voice pipeline CLI is merged (`greatsage voice health|listen|speak`).
+- Phase 6 voice pipeline CLI is merged (`greatsage voice health|listen|speak`),
+  with conversational loop added (`greatsage chat` — voice and text modes).
 - Phase 7 (autonomy: planner + task-graph + verification on top of
   `greatsage/planning` + `greatsage/task`) and Phase 9 (security hardening)
   are implemented (`greatsage/planning/graph.py` + `verify.py`,

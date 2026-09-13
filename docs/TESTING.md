@@ -218,15 +218,17 @@ Coverage:
   code (covered by `tests/integration/test_cli.py::test_version`).
 ## 6e. Phase 5B–10 baseline (delegation, autonomy, voice, vision, HUD, hardening)
 
-- **1050 tests passing** (13 Sept 2026: 1050 total), `ruff check
-  greatsage tests` clean, `mypy greatsage` clean (130 source files).- New suites since §6d: `tests/unit/delegation/` (models, manager, service),
+- **1071 tests passing** (13 Sept 2026: 1071 total), `ruff check
+  greatsage tests` clean, `mypy greatsage` clean (130 source files).
+- New suites since §6d: `tests/unit/delegation/` (models, manager, service),
   `tests/unit/planning/test_graph.py` + `test_verify.py` (Phase 7 DAG +
   verification gate), `tests/unit/voice/` (6 files, stub backends),
   `tests/unit/vision/` (7 files, stub backend, no OCR),
   `tests/unit/interface/test_hud.py` (Phase 10 read-only dashboard),
   `tests/unit/tools/test_security_hardening.py` (Phase 9 redaction + policy
-  tightening), plus CLI integration `test_cli_voice.py`, `test_cli_vision.py`,
-  `test_cli_hud.py`.
+  tightening), `tests/unit/chat/test_chat.py` (21 tests: text/voice/exit/
+  history/errors), plus CLI integration `test_cli_voice.py`,
+  `test_cli_vision.py`, `test_cli_hud.py`.
 - Test layout has converged to `tests/unit/<module>/` +
   `tests/integration/test_cli*.py` (the `tests/providers|tools|security|
   memory|tasks|opencode` top-level layout in §2 remains aspirational).
@@ -234,7 +236,7 @@ Coverage:
   grounding marker, metadata-only capture — no model downloads, no network.
 ## 6f. Roadmap baseline (scheduler, tools, telegram, embeddings, real voice)
 
-- **1050 tests passing** (13 Sept 2026), `ruff` + `mypy` clean
+- **1071 tests passing** (13 Sept 2026), `ruff` + `mypy` clean
   (130 source files).
 - New: `tests/unit/scheduler/` (models, repo, tick executor),
   `tests/integration/test_cli_schedule.py`,

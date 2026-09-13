@@ -15,7 +15,7 @@ import json
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 LOG_PATH = Path("C:/GREATSAGE/data/stability-log.jsonl")
@@ -33,7 +33,12 @@ def run_check(name: str, cmd: list[str], timeout: int = 300) -> dict:
         detail = r.stdout[-500:] if not passed else ""
         if r.stderr and not passed:
             detail += "\n" + r.stderr[-500:]
-        return {"name": name, "passed": passed, "duration_ms": round(duration), "detail": detail.strip()}
+        return {
+            "name": name,
+            "passed": passed,
+            "duration_ms": round(duration),
+            "detail": detail.strip(),
+        }
     except subprocess.TimeoutExpired:
         duration = (time.monotonic() - started) * 1000
         return {"name": name, "passed": False, "duration_ms": round(duration), "detail": "timeout"}
@@ -57,9 +62,21 @@ def _is_known_mypy_issue(detail: str) -> bool:
 def run_suite() -> dict:
     """Run all checks and return a result record."""
     checks = [
-        run_check("tests", [sys.executable, "-m", "pytest", "tests", "--tb=short", "-q"], timeout=600),
-        run_check("lint", [sys.executable, "-m", "ruff", "check", "greatsage", "tests"], timeout=60),
-        run_check("types", [sys.executable, "-m", "mypy", "greatsage"], timeout=120),
+        run_check(
+            "tests",
+            [sys.executable, "-m", "pytest", "tests", "--tb=short", "-q"],
+            timeout=600,
+        ),
+        run_check(
+            "lint",
+            [sys.executable, "-m", "ruff", "check", "greatsage", "tests"],
+            timeout=60,
+        ),
+        run_check(
+            "types",
+            [sys.executable, "-m", "mypy", "greatsage"],
+            timeout=120,
+        ),
     ]
 
     # Demote known third-party mypy issues from FAIL to WARN
@@ -72,7 +89,7 @@ def run_suite() -> dict:
     total_ms = sum(c["duration_ms"] for c in checks)
 
     return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "passed": all_passed,
         "checks": checks,
         "total_ms": total_ms,
@@ -113,7 +130,10 @@ def count_consecutive_greens(log_path: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Nightly stability proof")
-    parser.add_argument("--check", action="store_true", help="exit 0 only if consecutive greens >= N")
+    parser.add_argument(
+        "--check", action="store_true",
+        help="exit 0 only if consecutive greens >= N",
+    )
     parser.add_argument("--days", type=int, default=30, help="consecutive-green gate (default 30)")
     args = parser.parse_args()
 
