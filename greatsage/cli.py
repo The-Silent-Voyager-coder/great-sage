@@ -45,8 +45,9 @@ Commands:
             transcribe one bounded turn (mock STT, metadata + text)
     greatsage voice speak --text TEXT [--out PATH] [--session-id ID]
             synthesize one bounded utterance (mock TTS, WAV)
-    greatsage chat [--config PATH]   voice conversation loop
-            (mic -> transcribe -> generate -> speak -> repeat)
+    greatsage chat [--config PATH] [--text]   conversation loop
+            (voice: mic -> transcribe -> generate -> speak -> repeat)
+            (text: type -> generate -> print -> repeat)
 
 Exit codes: 0 success, 1 general failure, 2 invalid configuration/input.
 Memory content is never printed unless --content is passed.
@@ -183,9 +184,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="episodic look-back in days (must be >= 1; default 1)",
     )
 
-    chat_parser = subparsers.add_parser("chat", help="voice conversation loop")
+    chat_parser = subparsers.add_parser("chat", help="conversation loop (voice or text)")
     chat_parser.add_argument(
         "--config", metavar="PATH", default=None, help="configuration file to use"
+    )
+    chat_parser.add_argument(
+        "--text", action="store_true", help="text mode: type input instead of voice"
     )
 
     ai_parser = subparsers.add_parser("ai", help="AI provider commands")
@@ -2603,8 +2607,10 @@ def _cmd_briefing(args: argparse.Namespace) -> int:
 
 
 def _cmd_chat(args: argparse.Namespace) -> int:
-    """Voice conversation loop: mic -> transcribe -> generate -> speak."""
+    """Conversation loop: voice (mic -> transcribe -> generate -> speak) or text."""
     from greatsage.chat import ChatSession
+
+    text_mode = getattr(args, "text", False)
 
     try:
         runtime = _runtime_from_args(args)
@@ -2615,19 +2621,26 @@ def _cmd_chat(args: argparse.Namespace) -> int:
         print(f"greatsage chat: runtime startup failed: {exc}", file=sys.stderr)
         return EXIT_FAILURE
 
-    voice = VoiceService()
-    voice.publisher = runtime.bus.publish
-    voice.start(runtime.config)
-    if voice.availability != "healthy":
-        print(f"greatsage chat: voice not available: {voice.detail}", file=sys.stderr)
-        asyncio.run(runtime.stop())
-        return EXIT_FAILURE
+    voice: VoiceService | None = None
+    if not text_mode:
+        voice = VoiceService()
+        voice.publisher = runtime.bus.publish
+        voice.start(runtime.config)
+        if voice.availability != "healthy":
+            print(f"greatsage chat: voice not available: {voice.detail}", file=sys.stderr)
+            print("  hint: use --text for text-only mode", file=sys.stderr)
+            voice.shutdown()
+            voice = None
+            # Fall through to text mode rather than failing
 
-    session = ChatSession(runtime.config, voice, runtime.intelligence)
+    session = ChatSession(
+        runtime.config, runtime.intelligence, voice=voice, text_mode=text_mode,
+    )
     try:
         session.run()
     finally:
-        voice.shutdown()
+        if voice is not None:
+            voice.shutdown()
         asyncio.run(runtime.stop())
 
     return EXIT_OK
