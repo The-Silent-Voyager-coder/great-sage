@@ -60,7 +60,6 @@ no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 check_untyped_defs = true
-exclude = ["\\.venv/", ".*numpy.*"]
 
 # Third-party voice/ML stubs target newer Pythons than our 3.11 floor
 # (or ship none at all); our code is unaffected, so skip them.
