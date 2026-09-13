@@ -45,6 +45,8 @@ Commands:
             transcribe one bounded turn (mock STT, metadata + text)
     greatsage voice speak --text TEXT [--out PATH] [--session-id ID]
             synthesize one bounded utterance (mock TTS, WAV)
+    greatsage chat [--config PATH]   voice conversation loop
+            (mic -> transcribe -> generate -> speak -> repeat)
 
 Exit codes: 0 success, 1 general failure, 2 invalid configuration/input.
 Memory content is never printed unless --content is passed.
@@ -179,6 +181,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=1,
         help="episodic look-back in days (must be >= 1; default 1)",
+    )
+
+    chat_parser = subparsers.add_parser("chat", help="voice conversation loop")
+    chat_parser.add_argument(
+        "--config", metavar="PATH", default=None, help="configuration file to use"
     )
 
     ai_parser = subparsers.add_parser("ai", help="AI provider commands")
@@ -2595,6 +2602,37 @@ def _cmd_briefing(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_chat(args: argparse.Namespace) -> int:
+    """Voice conversation loop: mic -> transcribe -> generate -> speak."""
+    from greatsage.chat import ChatSession
+
+    try:
+        runtime = _runtime_from_args(args)
+    except ConfigurationError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_INVALID
+    except JarvisError as exc:
+        print(f"greatsage chat: runtime startup failed: {exc}", file=sys.stderr)
+        return EXIT_FAILURE
+
+    voice = VoiceService()
+    voice.publisher = runtime.bus.publish
+    voice.start(runtime.config)
+    if voice.availability != "healthy":
+        print(f"greatsage chat: voice not available: {voice.detail}", file=sys.stderr)
+        asyncio.run(runtime.stop())
+        return EXIT_FAILURE
+
+    session = ChatSession(runtime.config, voice, runtime.intelligence)
+    try:
+        session.run()
+    finally:
+        voice.shutdown()
+        asyncio.run(runtime.stop())
+
+    return EXIT_OK
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -2607,6 +2645,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_health(args)
     if args.command == "briefing":
         return _cmd_briefing(args)
+    if args.command == "chat":
+        return _cmd_chat(args)
     if args.command == "ai":
         if args.ai_command == "health":
             return _cmd_ai_health(args)
