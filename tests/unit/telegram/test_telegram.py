@@ -131,7 +131,7 @@ tools:
 scheduler:
   enabled: false
   max_schedules: 50
-  database_path: "{d}/data/scheduler.db"
+  database_path: "{d}/data/sage-scheduler.db"
 telegram:
   enabled: {"true" if enabled else "false"}
   token_env: "GREATSAGE_TEST_TELEGRAM_TOKEN"

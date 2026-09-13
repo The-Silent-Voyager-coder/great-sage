@@ -3,12 +3,12 @@
 > Status: **Phases 1–10 implemented (5A agent loop, 5B delegation,
 > 6 workspace/planning/task + voice, 7 autonomy, 8 vision stub,
 > 9 hardening, 10 HUD)**. Section 1 is implemented as
-> the provider abstraction and health contract (`jarvis.intelligence`);
-> sections 6 and 7 remain implemented (`jarvis.core.registry`,
-> `jarvis.configuration`); §9 documents the implemented memory interfaces
-> (`jarvis.memory`); §10 documents the implemented tool system
-> (`jarvis.tools`); §11 documents the implemented agent system
-> (`jarvis.agent`); the remaining sections stay design contracts for later
+> the provider abstraction and health contract (`greatsage.intelligence`);
+> sections 6 and 7 remain implemented (`greatsage.core.registry`,
+> `greatsage.configuration`); §9 documents the implemented memory interfaces
+> (`greatsage.memory`); §10 documents the implemented tool system
+> (`greatsage.tools`); §11 documents the implemented agent system
+> (`greatsage.agent`); the remaining sections stay design contracts for later
 > phases. Notation: Python typing + dataclass sketches; exact package layout
 > may shift, semantics must not.
 
@@ -279,35 +279,35 @@ load_config(config_path: str | Path | None = None,
 - Invalid configuration raises `ConfigurationError`; the CLI never starts the
   runtime on invalid config and never logs secret values.
 
-The Phase 1/2 CLI surface (`jarvis` console script, `greatsage/cli.py`):
+The Phase 1/2 CLI surface (`greatsage` console script, `greatsage/cli.py`):
 
 ```text
-jarvis --version                     → "jarvis 0.3.0", exit 0
-jarvis --help
-jarvis config validate [--config PATH]   → "Configuration valid." + "Source: …"
-jarvis health [--config PATH]            → per-component + Overall health table
-jarvis ai health [--config PATH] [--json]     → provider health (exit 1 if any unhealthy)
-jarvis ai providers [--config PATH] [--json]  → registered providers + capabilities
-jarvis ai benchmark [--config PATH] [--json]  → read-only hardware diagnostics
-jarvis memory health [--config PATH] [--json] → memory subsystem health (exit 1 if unavailable)
-jarvis memory stats [--config PATH] [--json]  → counts by type + subsystem state
-jarvis memory list [--config PATH] [--json] [--content] [filters] [--limit N] [--offset N]
-jarvis memory get ID [--config PATH] [--json] [--content] [--include-expired] [--include-deleted]
-jarvis memory delete ID [--config PATH] [--json]    → auditable soft delete
-jarvis memory delete [filters] --yes [--config PATH] [--json]  → bulk (needs a filter + --yes)
-jarvis memory search QUERY [--config PATH] [--json] [--content] [--semantic] [filters]
+greatsage --version                     → "greatsage 0.3.0", exit 0
+greatsage --help
+greatsage config validate [--config PATH]   → "Configuration valid." + "Source: …"
+greatsage health [--config PATH]            → per-component + Overall health table
+greatsage ai health [--config PATH] [--json]     → provider health (exit 1 if any unhealthy)
+greatsage ai providers [--config PATH] [--json]  → registered providers + capabilities
+greatsage ai benchmark [--config PATH] [--json]  → read-only hardware diagnostics
+greatsage memory health [--config PATH] [--json] → memory subsystem health (exit 1 if unavailable)
+greatsage memory stats [--config PATH] [--json]  → counts by type + subsystem state
+greatsage memory list [--config PATH] [--json] [--content] [filters] [--limit N] [--offset N]
+greatsage memory get ID [--config PATH] [--json] [--content] [--include-expired] [--include-deleted]
+greatsage memory delete ID [--config PATH] [--json]    → auditable soft delete
+greatsage memory delete [filters] --yes [--config PATH] [--json]  → bulk (needs a filter + --yes)
+greatsage memory search QUERY [--config PATH] [--json] [--content] [--semantic] [filters]
 # shared filters: --type, --source, --provenance, --min-confidence,
 #                 --session, --include-expired, --include-deleted
-jarvis memory digest [--days N] [--session SID] [--config PATH] [--json] [--content]
-jarvis memory reindex [--limit N] [--config PATH] [--json]
-jarvis tools list [--config PATH] [--json]                 → registered tools
-jarvis tools info ID [--config PATH] [--json]              → one declaration
-jarvis tools health [--config PATH] [--json]               → service + mode
-jarvis tools execute ID [key=value ...] [--approve] [--json]
+greatsage memory digest [--days N] [--session SID] [--config PATH] [--json] [--content]
+greatsage memory reindex [--limit N] [--config PATH] [--json]
+greatsage tools list [--config PATH] [--json]                 → registered tools
+greatsage tools info ID [--config PATH] [--json]              → one declaration
+greatsage tools health [--config PATH] [--json]               → service + mode
+greatsage tools execute ID [key=value ...] [--approve] [--json]
                         [--session-id SID] [--config PATH] → full pipeline
-jarvis briefing [--days N] [--content] [--config PATH] [--json]
-jarvis schedule add|list|remove|tick|health [--config PATH] [--json]
-jarvis telegram health|listen [--once] [--for SECONDS] [--config PATH] [--json]
+greatsage briefing [--days N] [--content] [--config PATH] [--json]
+greatsage schedule add|list|remove|tick|health [--config PATH] [--json]
+greatsage telegram health|listen [--once] [--for SECONDS] [--config PATH] [--json]
 ```
 
 Exit codes: `0` success, `1` general failure (e.g. runtime failed to start,
@@ -633,8 +633,8 @@ class AgentApprovalProvider:   # greatsage/agent/approval.py
 ### CLI
 
 ```text
-jarvis agent health [--config PATH] [--json]
-jarvis agent run --prompt TEXT [--session-id SID] [--provider NAME]
+greatsage agent health [--config PATH] [--json]
+greatsage agent run --prompt TEXT [--session-id SID] [--provider NAME]
                   [--model NAME] [--max-steps N] [--json] [--config PATH]
 ```
 
@@ -673,20 +673,20 @@ class TaskService:        # greatsage/task/service.py
 ### CLI
 
 ```text
-jarvis workspace scan [PATH] [--config PATH] [--json]
-jarvis workspace info [--id ID] [--path PATH] [--config PATH] [--json]
-jarvis workspace health [--config PATH] [--json]
-jarvis planning create GOAL [--workspace-id ID] [--workspace-root PATH]
+greatsage workspace scan [PATH] [--config PATH] [--json]
+greatsage workspace info [--id ID] [--path PATH] [--config PATH] [--json]
+greatsage workspace health [--config PATH] [--json]
+greatsage planning create GOAL [--workspace-id ID] [--workspace-root PATH]
                      [--plan-id ID] [--config PATH] [--json]
-jarvis planning get <plan_id> [--config PATH] [--json]
-jarvis planning list [--config PATH] [--json]
-jarvis planning health [--config PATH] [--json]
-jarvis task run PLAN [--config PATH] [--json]
-jarvis task resume <task_id> [--config PATH] [--json]
-jarvis task list [--limit N] [--config PATH] [--json]
-jarvis task get <task_id> [--config PATH] [--json]
-jarvis task cancel <task_id> [--config PATH] [--json]
-jarvis task health [--config PATH] [--json]
+greatsage planning get <plan_id> [--config PATH] [--json]
+greatsage planning list [--config PATH] [--json]
+greatsage planning health [--config PATH] [--json]
+greatsage task run PLAN [--config PATH] [--json]
+greatsage task resume <task_id> [--config PATH] [--json]
+greatsage task list [--limit N] [--config PATH] [--json]
+greatsage task get <task_id> [--config PATH] [--json]
+greatsage task cancel <task_id> [--config PATH] [--json]
+greatsage task health [--config PATH] [--json]
 ```
 
 Exit codes: `0` success / healthy / completed; `1` not-found, unavailable
@@ -696,10 +696,10 @@ subsystem, or non-completed task state; `2` invalid input/configuration
 ### Phases 7–10 status (integration notes)
 
 - Phase 8 (vision) and Phase 10 (HUD) CLIs are merged
-  (`jarvis vision health|capture|describe`, `jarvis hud|status|dashboard`);
+  (`greatsage vision health|capture|describe`, `greatsage hud|status|dashboard`);
   vision has no `vision.*` config section yet — the service is
   config-independent (see merge-risk notes in the Phase 6–10 QA report).
-- Phase 6 voice pipeline CLI is merged (`jarvis voice health|listen|speak`).
+- Phase 6 voice pipeline CLI is merged (`greatsage voice health|listen|speak`).
 - Phase 7 (autonomy: planner + task-graph + verification on top of
   `greatsage/planning` + `greatsage/task`) and Phase 9 (security hardening)
   are implemented (`greatsage/planning/graph.py` + `verify.py`,

@@ -83,7 +83,7 @@ Audit writes are synchronous and cannot be disabled by agents.
 ## 8. Memory Privacy Rules (implemented Phase 3)
 
 - **No secret storage.** The memory subsystem never stores credentials,
-  tokens, or API keys; inspection (`jarvis memory list|get|stats|search`)
+  tokens, or API keys; inspection (`greatsage memory list|get|stats|search`)
   never exposes them by design — memory is for curated facts, not secrets.
 - **Content never leaves the machine unencrypted by default.** The SQLite
   database is a local file under `C:\GREATSAGE\data\` (config-overridable).

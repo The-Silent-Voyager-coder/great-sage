@@ -185,7 +185,7 @@ Coverage:
 - **Deadlock regression**: verification for the approval gate is
   thread-based; the re-entrant-lock deadlock caught in Phase 5A is covered
   by the threaded decision tests.
-- **Integration**: `jarvis agent health` (offline, exit 0, json), `agent
+- **Integration**: `greatsage agent health` (offline, exit 0, json), `agent
   run` with a scripted mock provider (one safe tool call, then final text),
   empty-prompt → exit 2, offline no-provider → exit 1, `--max-steps 1` →
   `limit_reached` exit 1.
@@ -212,8 +212,8 @@ Coverage:
   namespace-package `tests/` dir (regular packages win over namespace
   portions) and all `from tests.…` imports fail at collection with
   `ModuleNotFoundError: No module named 'tests.unit'`.
-- Version regression note: `jarvis --version` reports the source
-  `jarvis.__version__` as authoritative — a stale or unrelated installed
+- Version regression note: `greatsage --version` reports the source
+  `greatsage.__version__` as authoritative — a stale or unrelated installed
   distribution reusing the `jarvis` dist name must not mislabel running
   code (covered by `tests/integration/test_cli.py::test_version`).
 ## 6e. Phase 5B–10 baseline (delegation, autonomy, voice, vision, HUD, hardening)

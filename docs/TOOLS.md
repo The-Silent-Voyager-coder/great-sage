@@ -203,13 +203,13 @@ tools:
 Environment overrides use the double-underscore convention, e.g.
 `GREATSAGE_TOOLS__ALLOWED_ROOTS`, `GREATSAGE_SECURITY__MODE`.
 
-## 9. CLI (`jarvis tools`)
+## 9. CLI (`greatsage tools`)
 
 ```text
-jarvis tools list [--config PATH] [--json]      → every registered tool
-jarvis tools info ID [--config PATH] [--json]   → one tool declaration
-jarvis tools health [--config PATH] [--json]    → service health + mode
-jarvis tools execute ID [--json] [--approve]    → run one tool through the
+greatsage tools list [--config PATH] [--json]      → every registered tool
+greatsage tools info ID [--config PATH] [--json]   → one tool declaration
+greatsage tools health [--config PATH] [--json]    → service health + mode
+greatsage tools execute ID [--json] [--approve]    → run one tool through the
         [--session-id SID] [--config PATH]      →   full security pipeline
         [key=value ...]
 ```

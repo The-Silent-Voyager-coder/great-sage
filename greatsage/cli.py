@@ -1,4 +1,4 @@
-"""J.A.R.V.I.S. command-line interface.
+"""Great Sage command-line interface.
 
 Commands:
 
@@ -644,7 +644,7 @@ def _cmd_ai_health(args: argparse.Namespace) -> int:
     try:
         registry_health = runtime.intelligence.health()
     except JarvisError as exc:
-        print(f"jarvis ai health: {exc}", file=sys.stderr)
+        print(f"greatsage ai health: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -696,7 +696,7 @@ def _cmd_ai_benchmark(args: argparse.Namespace) -> int:
     try:
         result = run_benchmark()
     except Exception as exc:
-        print(f"jarvis ai benchmark: {exc}", file=sys.stderr)
+        print(f"greatsage ai benchmark: {exc}", file=sys.stderr)
         return EXIT_FAILURE
 
     if args.json:
@@ -818,7 +818,7 @@ def _cmd_memory_list(args: argparse.Namespace) -> int:
             }
         )
     except MemoryError as exc:
-        print(f"jarvis memory list: {exc}", file=sys.stderr)
+        print(f"greatsage memory list: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -843,12 +843,12 @@ def _cmd_memory_get(args: argparse.Namespace) -> int:
             include_deleted=args.include_deleted,
         )
     except MemoryError as exc:
-        print(f"jarvis memory get: {exc}", file=sys.stderr)
+        print(f"greatsage memory get: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
     if memory is None:
-        print(f"jarvis memory get: memory not found: {args.memory_id}", file=sys.stderr)
+        print(f"greatsage memory get: memory not found: {args.memory_id}", file=sys.stderr)
         return EXIT_FAILURE
     if args.json:
         print(json.dumps(memory.to_dict(include_content=args.content), indent=2))
@@ -889,14 +889,14 @@ def _cmd_memory_delete(args: argparse.Namespace) -> int:
             filters = _memory_filter_kwargs(args)
             if not any(k in filters for k in ("memory_type", "source", "provenance", "session_id")):
                 print(
-                    "jarvis memory delete: provide a memory id or at least one filter "
+                    "greatsage memory delete: provide a memory id or at least one filter "
                     "(--type/--source/--provenance)",
                     file=sys.stderr,
                 )
                 return EXIT_INVALID
             if not args.yes:
                 print(
-                    "jarvis memory delete: bulk deletion requires --yes confirmation",
+                    "greatsage memory delete: bulk deletion requires --yes confirmation",
                     file=sys.stderr,
                 )
                 return EXIT_INVALID
@@ -905,10 +905,10 @@ def _cmd_memory_delete(args: argparse.Namespace) -> int:
             for memory_id in deleted:
                 runtime.memory.forget(memory_id)
     except MemoryNotFoundError as exc:
-        print(f"jarvis memory delete: {exc}", file=sys.stderr)
+        print(f"greatsage memory delete: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     except MemoryError as exc:
-        print(f"jarvis memory delete: {exc}", file=sys.stderr)
+        print(f"greatsage memory delete: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -928,7 +928,7 @@ def _cmd_memory_stats(args: argparse.Namespace) -> int:
     try:
         stats = runtime.memory.stats()
     except MemoryError as exc:
-        print(f"jarvis memory stats: {exc}", file=sys.stderr)
+        print(f"greatsage memory stats: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -965,7 +965,7 @@ def _cmd_memory_search(args: argparse.Namespace) -> int:
             },
         )
     except MemoryError as exc:
-        print(f"jarvis memory search: {exc}", file=sys.stderr)
+        print(f"greatsage memory search: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -979,7 +979,7 @@ def _cmd_memory_search(args: argparse.Namespace) -> int:
 
 def _cmd_memory_reindex(args: argparse.Namespace) -> int:
     if args.limit is None or args.limit < 1:
-        print("jarvis memory reindex: --limit must be an integer >= 1", file=sys.stderr)
+        print("greatsage memory reindex: --limit must be an integer >= 1", file=sys.stderr)
         return EXIT_INVALID
     try:
         runtime = _memory_runtime(args)
@@ -990,7 +990,7 @@ def _cmd_memory_reindex(args: argparse.Namespace) -> int:
         try:
             data = runtime.memory.reindex_embeddings(limit=args.limit)
         except (MemoryValidationError, MemoryUnavailableError) as exc:
-            print(f"jarvis memory reindex: {exc}", file=sys.stderr)
+            print(f"greatsage memory reindex: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1008,7 +1008,7 @@ def _cmd_memory_digest(args: argparse.Namespace) -> int:
     days = args.days
     if days is None or days < 1:
         print(
-            "jarvis memory digest: --days must be an integer >= 1",
+            "greatsage memory digest: --days must be an integer >= 1",
             file=sys.stderr,
         )
         return EXIT_INVALID
@@ -1026,7 +1026,7 @@ def _cmd_memory_digest(args: argparse.Namespace) -> int:
             limit=None,
         )
     except MemoryError as exc:
-        print(f"jarvis memory digest: {exc}", file=sys.stderr)
+        print(f"greatsage memory digest: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1121,7 +1121,7 @@ def _cmd_tools_info(args: argparse.Namespace) -> int:
     try:
         info = runtime.tools.registry().describe(args.tool_id)
     except ToolNotFoundError as exc:
-        print(f"jarvis tools info: {exc}", file=sys.stderr)
+        print(f"greatsage tools info: {exc}", file=sys.stderr)
         return EXIT_INVALID
     finally:
         asyncio.run(runtime.stop())
@@ -1172,7 +1172,7 @@ def _cmd_tools_execute(args: argparse.Namespace) -> int:
         try:
             arguments = _parse_tool_arguments(args.assignments)
         except ToolValidationError as exc:
-            print(f"jarvis tools execute: {exc}", file=sys.stderr)
+            print(f"greatsage tools execute: {exc}", file=sys.stderr)
             return EXIT_INVALID
         if args.approve:
             runtime.tools.approval = DeterministicApprovalProvider(
@@ -1187,10 +1187,10 @@ def _cmd_tools_execute(args: argparse.Namespace) -> int:
         )
         result = runtime.tools.execute(request)
     except (ToolNotFoundError, ToolValidationError) as exc:
-        print(f"jarvis tools execute: {exc}", file=sys.stderr)
+        print(f"greatsage tools execute: {exc}", file=sys.stderr)
         return EXIT_INVALID
     except (ToolPermissionDeniedError, ToolUnavailableError) as exc:
-        print(f"jarvis tools execute: {exc}", file=sys.stderr)
+        print(f"greatsage tools execute: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1253,7 +1253,7 @@ def _cmd_agent_health(args: argparse.Namespace) -> int:
 def _cmd_agent_run(args: argparse.Namespace) -> int:
     prompt = args.prompt.strip()
     if not prompt:
-        print("jarvis agent run: prompt must not be empty", file=sys.stderr)
+        print("greatsage agent run: prompt must not be empty", file=sys.stderr)
         return EXIT_INVALID
     try:
         runtime = _runtime_from_args(args)
@@ -1269,13 +1269,13 @@ def _cmd_agent_run(args: argparse.Namespace) -> int:
             max_steps=args.max_steps,
         )
     except (AgentUnavailableError, ProviderCapabilityError) as exc:
-        print(f"jarvis agent run: {exc}", file=sys.stderr)
+        print(f"greatsage agent run: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     except AgentValidationError as exc:
-        print(f"jarvis agent run: {exc}", file=sys.stderr)
+        print(f"greatsage agent run: {exc}", file=sys.stderr)
         return EXIT_INVALID
     except JarvisError as exc:
-        print(f"jarvis agent run: {exc}", file=sys.stderr)
+        print(f"greatsage agent run: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1353,7 +1353,7 @@ def _cmd_delegation_list(args: argparse.Namespace) -> int:
         try:
             tasks = runtime.delegation.list_tasks(args.limit)
         except DelegationUnavailableError as exc:
-            print(f"jarvis delegation list: {exc}", file=sys.stderr)
+            print(f"greatsage delegation list: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1385,10 +1385,10 @@ def _cmd_delegation_get(args: argparse.Namespace) -> int:
         try:
             data = runtime.delegation.get(args.task_id)
         except DelegationValidationError as exc:
-            print(f"jarvis delegation get: {exc}", file=sys.stderr)
+            print(f"greatsage delegation get: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except DelegationUnavailableError as exc:
-            print(f"jarvis delegation get: {exc}", file=sys.stderr)
+            print(f"greatsage delegation get: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1418,10 +1418,10 @@ def _cmd_delegation_cancel(args: argparse.Namespace) -> int:
         try:
             data = runtime.delegation.cancel(args.task_id)
         except DelegationValidationError as exc:
-            print(f"jarvis delegation cancel: {exc}", file=sys.stderr)
+            print(f"greatsage delegation cancel: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except DelegationUnavailableError as exc:
-            print(f"jarvis delegation cancel: {exc}", file=sys.stderr)
+            print(f"greatsage delegation cancel: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1448,10 +1448,10 @@ def _cmd_workspace_scan(args: argparse.Namespace) -> int:
         try:
             data = runtime.workspace.scan(args.path)
         except WorkspaceValidationError as exc:
-            print(f"jarvis workspace scan: {exc}", file=sys.stderr)
+            print(f"greatsage workspace scan: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except WorkspaceUnavailableError as exc:
-            print(f"jarvis workspace scan: {exc}", file=sys.stderr)
+            print(f"greatsage workspace scan: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1485,13 +1485,13 @@ def _cmd_workspace_info(args: argparse.Namespace) -> int:
             else:
                 data = runtime.workspace.info()
             if data is None:
-                print("jarvis workspace info: not found", file=sys.stderr)
+                print("greatsage workspace info: not found", file=sys.stderr)
                 return EXIT_FAILURE
         except WorkspaceValidationError as exc:
-            print(f"jarvis workspace info: {exc}", file=sys.stderr)
+            print(f"greatsage workspace info: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except WorkspaceUnavailableError as exc:
-            print(f"jarvis workspace info: {exc}", file=sys.stderr)
+            print(f"greatsage workspace info: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1559,13 +1559,13 @@ def _cmd_task_run(args: argparse.Namespace) -> int:
                 return EXIT_OK if ok else EXIT_FAILURE
             report = runtime.task.run(args.plan, approved=args.approve)
         except TaskValidationError as exc:
-            print(f"jarvis task run: {exc}", file=sys.stderr)
+            print(f"greatsage task run: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except TaskUnavailableError as exc:
-            print(f"jarvis task run: {exc}", file=sys.stderr)
+            print(f"greatsage task run: {exc}", file=sys.stderr)
             return EXIT_FAILURE
         except JarvisError as exc:
-            print(f"jarvis task run: {exc}", file=sys.stderr)
+            print(f"greatsage task run: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1594,10 +1594,10 @@ def _cmd_task_resume(args: argparse.Namespace) -> int:
         try:
             report = runtime.task.resume(args.task_id)
         except TaskValidationError as exc:
-            print(f"jarvis task resume: {exc}", file=sys.stderr)
+            print(f"greatsage task resume: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except TaskUnavailableError as exc:
-            print(f"jarvis task resume: {exc}", file=sys.stderr)
+            print(f"greatsage task resume: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1622,7 +1622,7 @@ def _cmd_task_list(args: argparse.Namespace) -> int:
         try:
             items = runtime.task.list(limit=args.limit)
         except TaskUnavailableError as exc:
-            print(f"jarvis task list: {exc}", file=sys.stderr)
+            print(f"greatsage task list: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1647,10 +1647,10 @@ def _cmd_task_get(args: argparse.Namespace) -> int:
         try:
             data = runtime.task.get(args.task_id)
         except TaskValidationError as exc:
-            print(f"jarvis task get: {exc}", file=sys.stderr)
+            print(f"greatsage task get: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except TaskUnavailableError as exc:
-            print(f"jarvis task get: {exc}", file=sys.stderr)
+            print(f"greatsage task get: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1678,10 +1678,10 @@ def _cmd_task_cancel(args: argparse.Namespace) -> int:
         try:
             data = runtime.task.cancel(args.task_id)
         except TaskValidationError as exc:
-            print(f"jarvis task cancel: {exc}", file=sys.stderr)
+            print(f"greatsage task cancel: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except TaskUnavailableError as exc:
-            print(f"jarvis task cancel: {exc}", file=sys.stderr)
+            print(f"greatsage task cancel: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1729,10 +1729,10 @@ def _cmd_planning_create(args: argparse.Namespace) -> int:
             workspace = {"root": args.workspace} if args.workspace else None
             data = runtime.planning.create_plan(args.goal, workspace)
         except PlanningValidationError as exc:
-            print(f"jarvis planning create: {exc}", file=sys.stderr)
+            print(f"greatsage planning create: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except PlanningUnavailableError as exc:
-            print(f"jarvis planning create: {exc}", file=sys.stderr)
+            print(f"greatsage planning create: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1758,12 +1758,12 @@ def _cmd_planning_get(args: argparse.Namespace) -> int:
         try:
             data = runtime.planning.get(args.plan_id)
         except PlanningUnavailableError as exc:
-            print(f"jarvis planning get: {exc}", file=sys.stderr)
+            print(f"greatsage planning get: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
     if data is None:
-        print(f"jarvis planning get: plan not found: {args.plan_id}", file=sys.stderr)
+        print(f"greatsage planning get: plan not found: {args.plan_id}", file=sys.stderr)
         return EXIT_INVALID
     if args.json:
         print(json.dumps(data, indent=2))
@@ -1789,7 +1789,7 @@ def _cmd_planning_list(args: argparse.Namespace) -> int:
         try:
             items = runtime.planning.list()
         except PlanningUnavailableError as exc:
-            print(f"jarvis planning list: {exc}", file=sys.stderr)
+            print(f"greatsage planning list: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1814,10 +1814,10 @@ def _cmd_planning_verify(args: argparse.Namespace) -> int:
         try:
             data = runtime.planning.verify(args.plan_id)
         except PlanningValidationError as exc:
-            print(f"jarvis planning verify: {exc}", file=sys.stderr)
+            print(f"greatsage planning verify: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except PlanningUnavailableError as exc:
-            print(f"jarvis planning verify: {exc}", file=sys.stderr)
+            print(f"greatsage planning verify: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1847,10 +1847,10 @@ def _cmd_planning_approve(args: argparse.Namespace) -> int:
         try:
             data = runtime.planning.approve(args.plan_id)
         except PlanningValidationError as exc:
-            print(f"jarvis planning approve: {exc}", file=sys.stderr)
+            print(f"greatsage planning approve: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except PlanningUnavailableError as exc:
-            print(f"jarvis planning approve: {exc}", file=sys.stderr)
+            print(f"greatsage planning approve: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1893,13 +1893,13 @@ def _cmd_schedule_add(args: argparse.Namespace) -> int:
     kind = str(args.kind).strip().lower()
     if kind not in ("briefing", "tool"):
         print(
-            f"jarvis schedule add: unknown kind {args.kind!r} (expected briefing | tool)",
+            f"greatsage schedule add: unknown kind {args.kind!r} (expected briefing | tool)",
             file=sys.stderr,
         )
         return EXIT_INVALID
     if args.every is None or args.every < MIN_INTERVAL_SECONDS:
         print(
-            "jarvis schedule add: --every must be an integer "
+            "greatsage schedule add: --every must be an integer "
             f">= {MIN_INTERVAL_SECONDS} seconds",
             file=sys.stderr,
         )
@@ -1911,17 +1911,17 @@ def _cmd_schedule_add(args: argparse.Namespace) -> int:
     else:
         if not str(args.tool or "").strip():
             print(
-                "jarvis schedule add: tool schedules require --tool TOOL_ID",
+                "greatsage schedule add: tool schedules require --tool TOOL_ID",
                 file=sys.stderr,
             )
             return EXIT_INVALID
         try:
             parsed_args = json.loads(args.args or "{}")
         except json.JSONDecodeError as exc:
-            print(f"jarvis schedule add: --args is not valid JSON: {exc}", file=sys.stderr)
+            print(f"greatsage schedule add: --args is not valid JSON: {exc}", file=sys.stderr)
             return EXIT_INVALID
         if not isinstance(parsed_args, dict):
-            print("jarvis schedule add: --args must be a JSON object", file=sys.stderr)
+            print("greatsage schedule add: --args must be a JSON object", file=sys.stderr)
             return EXIT_INVALID
         payload = {"tool_id": args.tool.strip(), "arguments": parsed_args}
     try:
@@ -1936,10 +1936,10 @@ def _cmd_schedule_add(args: argparse.Namespace) -> int:
                 interval_seconds=args.every, payload=payload,
             )
         except SchedulerValidationError as exc:
-            print(f"jarvis schedule add: {exc}", file=sys.stderr)
+            print(f"greatsage schedule add: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except SchedulerUnavailableError as exc:
-            print(f"jarvis schedule add: {exc}", file=sys.stderr)
+            print(f"greatsage schedule add: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1960,7 +1960,7 @@ def _cmd_schedule_list(args: argparse.Namespace) -> int:
         try:
             items = runtime.scheduler.list()
         except SchedulerUnavailableError as exc:
-            print(f"jarvis schedule list: {exc}", file=sys.stderr)
+            print(f"greatsage schedule list: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1986,10 +1986,10 @@ def _cmd_schedule_remove(args: argparse.Namespace) -> int:
         try:
             data = runtime.scheduler.remove(args.schedule_id)
         except SchedulerValidationError as exc:
-            print(f"jarvis schedule remove: {exc}", file=sys.stderr)
+            print(f"greatsage schedule remove: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except SchedulerUnavailableError as exc:
-            print(f"jarvis schedule remove: {exc}", file=sys.stderr)
+            print(f"greatsage schedule remove: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -1999,7 +1999,7 @@ def _cmd_schedule_remove(args: argparse.Namespace) -> int:
     if data.get("removed"):
         print(f"Removed schedule {args.schedule_id}.")
         return EXIT_OK
-    print(f"jarvis schedule remove: unknown schedule: {args.schedule_id}", file=sys.stderr)
+    print(f"greatsage schedule remove: unknown schedule: {args.schedule_id}", file=sys.stderr)
     return EXIT_FAILURE
 
 
@@ -2013,7 +2013,7 @@ def _cmd_schedule_tick(args: argparse.Namespace) -> int:
         try:
             data = runtime.scheduler.tick()
         except SchedulerUnavailableError as exc:
-            print(f"jarvis schedule tick: {exc}", file=sys.stderr)
+            print(f"greatsage schedule tick: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -2158,7 +2158,7 @@ def _cmd_telegram_listen(args: argparse.Namespace) -> int:
     from greatsage.telegram.client import TelegramError
 
     if args.for_seconds is None or args.for_seconds < 1:
-        print("jarvis telegram listen: --for must be >= 1 second", file=sys.stderr)
+        print("greatsage telegram listen: --for must be >= 1 second", file=sys.stderr)
         return EXIT_INVALID
     try:
         runtime = _runtime_from_args(args)
@@ -2177,7 +2177,7 @@ def _cmd_telegram_listen(args: argparse.Namespace) -> int:
                 },
             )
         except TelegramError as exc:
-            print(f"jarvis telegram listen: {exc}", file=sys.stderr)
+            print(f"greatsage telegram listen: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         asyncio.run(runtime.stop())
@@ -2208,7 +2208,7 @@ def _cmd_hud(args: argparse.Namespace, *, compact: bool) -> int:
                 runtime, limit=args.limit, sections=args.sections
             )
         except HudValidationError as exc:
-            print(f"jarvis {args.command}: {exc}", file=sys.stderr)
+            print(f"greatsage {args.command}: {exc}", file=sys.stderr)
             return EXIT_INVALID
     finally:
         asyncio.run(runtime.stop())
@@ -2271,10 +2271,10 @@ def _cmd_vision_capture(args: argparse.Namespace) -> int:
                 output_path=args.out,
             )
         except VisionValidationError as exc:
-            print(f"jarvis vision capture: {exc}", file=sys.stderr)
+            print(f"greatsage vision capture: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except (VisionUnavailableError, VisionError) as exc:
-            print(f"jarvis vision capture: {exc}", file=sys.stderr)
+            print(f"greatsage vision capture: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         service.shutdown()
@@ -2304,7 +2304,7 @@ def _cmd_vision_describe(args: argparse.Namespace) -> int:
             else:
                 latest = service.latest()
                 if latest is None:
-                    print("jarvis vision describe: no captures stored", file=sys.stderr)
+                    print("greatsage vision describe: no captures stored", file=sys.stderr)
                     return EXIT_FAILURE
                 target = latest.id
             description = service.describe(
@@ -2313,10 +2313,10 @@ def _cmd_vision_describe(args: argparse.Namespace) -> int:
                 max_regions=args.max_regions,
             )
         except VisionValidationError as exc:
-            print(f"jarvis vision describe: {exc}", file=sys.stderr)
+            print(f"greatsage vision describe: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except (VisionUnavailableError, VisionError) as exc:
-            print(f"jarvis vision describe: {exc}", file=sys.stderr)
+            print(f"greatsage vision describe: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         service.shutdown()
@@ -2371,7 +2371,7 @@ def _cmd_voice_health(args: argparse.Namespace) -> int:
 def _cmd_voice_listen(args: argparse.Namespace) -> int:
     if (args.text is None) == (args.audio_path is None):
         print(
-            "jarvis voice listen: provide exactly one of --text or --audio-path",
+            "greatsage voice listen: provide exactly one of --text or --audio-path",
             file=sys.stderr,
         )
         return EXIT_INVALID
@@ -2387,16 +2387,16 @@ def _cmd_voice_listen(args: argparse.Namespace) -> int:
                 try:
                     audio = Path(args.audio_path).read_bytes()
                 except OSError as exc:
-                    print(f"jarvis voice listen: cannot read audio file: {exc}", file=sys.stderr)
+                    print(f"greatsage voice listen: cannot read audio file: {exc}", file=sys.stderr)
                     return EXIT_INVALID
             record = service.listen(
                 args.text, audio=audio, session_id=args.session_id
             )
         except VoiceValidationError as exc:
-            print(f"jarvis voice listen: {exc}", file=sys.stderr)
+            print(f"greatsage voice listen: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except (VoiceUnavailableError, VoiceError) as exc:
-            print(f"jarvis voice listen: {exc}", file=sys.stderr)
+            print(f"greatsage voice listen: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         service.shutdown()
@@ -2413,7 +2413,7 @@ def _cmd_voice_listen(args: argparse.Namespace) -> int:
 
 def _cmd_voice_speak(args: argparse.Namespace) -> int:
     if not args.text or not args.text.strip():
-        print("jarvis voice speak: --text must not be empty", file=sys.stderr)
+        print("greatsage voice speak: --text must not be empty", file=sys.stderr)
         return EXIT_INVALID
     try:
         service = _voice_service_from_args(args)
@@ -2426,10 +2426,10 @@ def _cmd_voice_speak(args: argparse.Namespace) -> int:
                 args.text, session_id=args.session_id, output_path=args.out
             )
         except VoiceValidationError as exc:
-            print(f"jarvis voice speak: {exc}", file=sys.stderr)
+            print(f"greatsage voice speak: {exc}", file=sys.stderr)
             return EXIT_INVALID
         except (VoiceUnavailableError, VoiceError) as exc:
-            print(f"jarvis voice speak: {exc}", file=sys.stderr)
+            print(f"greatsage voice speak: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
         service.shutdown()
@@ -2455,7 +2455,7 @@ def _cmd_health(args: argparse.Namespace) -> int:
     try:
         asyncio.run(runtime.start())
     except JarvisError as exc:
-        print(f"jarvis health: {exc}", file=sys.stderr)
+        print(f"greatsage health: {exc}", file=sys.stderr)
         return EXIT_FAILURE
 
     print("Great Sage Health")
@@ -2484,7 +2484,7 @@ def _cmd_briefing(args: argparse.Namespace) -> int:
     days = args.days
     if days is None or days < 1:
         print(
-            "jarvis briefing: --days must be an integer >= 1",
+            "greatsage briefing: --days must be an integer >= 1",
             file=sys.stderr,
         )
         return EXIT_INVALID
@@ -2494,7 +2494,7 @@ def _cmd_briefing(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return EXIT_INVALID
     except JarvisError as exc:
-        print(f"jarvis briefing: runtime startup failed: {exc}", file=sys.stderr)
+        print(f"greatsage briefing: runtime startup failed: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     try:
         brief: dict = {"days": days}

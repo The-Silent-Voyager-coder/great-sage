@@ -45,7 +45,7 @@ Implementation notes:
   vendored model of the relevant endpoints); do **not** hand-maintain
   ad-hoc JSON parsing per endpoint.
 - All transport details (base URL, auth, timeouts, retries) are config-driven.
-- The SSE event stream maps to `jarvis.events` (e.g. `OpenCodeEventReceived`,
+- The SSE event stream maps to `greatsage.events` (e.g. `OpenCodeEventReceived`,
   session progress, permission requests) so the core never polls.
 
 ## 3. Delegation Workflow

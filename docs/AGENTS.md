@@ -135,8 +135,8 @@ AGENT_STEP_COMPLETED (final) → AGENT_COMPLETED
 ## 10. CLI
 
 ```text
-jarvis agent health [--config PATH] [--json]
-jarvis agent run --prompt TEXT [--session-id SID] [--provider NAME]
+greatsage agent health [--config PATH] [--json]
+greatsage agent run --prompt TEXT [--session-id SID] [--provider NAME]
                   [--model NAME] [--max-steps N] [--json] [--config PATH]
 ```
 

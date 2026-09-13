@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       # Windows-only by design: the product targets Windows 11 (README,
       # pyproject classifiers) and default paths are Windows-style
-      # (C:/JARVIS/...), which fail absolute-path validation on POSIX.
+      # (C:/GREATSAGE/...), which fail absolute-path validation on POSIX.
       # POSIX support needs OS-aware defaults everywhere — tracked future work.
       matrix:
         os: [windows-latest]

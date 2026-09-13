@@ -10,7 +10,7 @@ from greatsage.configuration.validation import apply_env, coerce_env, validate
 def test_valid_default_raw_has_no_problems() -> None:
     problems = validate(
         {
-            "core": {"name": "x", "data_dir": "C:/JARVIS/data"},
+            "core": {"name": "x", "data_dir": "C:/GREATSAGE/data"},
             "logging": {"level": "INFO"},
         }
     )
@@ -77,17 +77,17 @@ def test_invalid_max_output_bytes() -> None:
 
 
 def test_allowed_roots_rejects_non_list() -> None:
-    problems = validate({"tools": {"allowed_roots": "C:/JARVIS"}})
+    problems = validate({"tools": {"allowed_roots": "C:/GREATSAGE"}})
     assert problems[0].field == "allowed_roots"
 
 
 def test_allowed_roots_rejects_relative_item() -> None:
-    problems = validate({"tools": {"allowed_roots": ["C:/JARVIS", "relative/path"]}})
+    problems = validate({"tools": {"allowed_roots": ["C:/GREATSAGE", "relative/path"]}})
     assert problems[0].field == "allowed_roots"
 
 
 def test_allowed_roots_accepts_absolute_list() -> None:
-    assert validate({"tools": {"allowed_roots": ["C:/JARVIS", "D:/work"]}}) == []
+    assert validate({"tools": {"allowed_roots": ["C:/GREATSAGE", "D:/work"]}}) == []
 
 
 def test_denied_roots_accepts_empty_list() -> None:

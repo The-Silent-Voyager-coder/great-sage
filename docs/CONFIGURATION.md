@@ -91,14 +91,14 @@ Phase 1 ships the complete loader, validator, and CLI:
   (`GREATSAGE_SECTION__FIELD`, `GREATSAGE_AI__PROVIDERS__<NAME>__<FIELD>`);
   unknown `GREATSAGE_*` keys are ignored, and unparseable values fail with a
   `ConfigurationError` naming the variable.
-- **CLI**: `jarvis config validate [--config PATH]` prints `Configuration
+- **CLI**: `greatsage config validate [--config PATH]` prints `Configuration
   valid.` + `Source:` (resolved path or `built-in defaults`), exits `0`/`2`.
 - The `Config` object is exposed via the runtime: `Runtime.config
-  (jarvis.configuration.model.JarvisConfig)`.
+  (greatsage.configuration.model.JarvisConfig)`.
 
 ## 7. AI Provider Configuration (Phase 2)
 
-The `ai.*` schema drives the intelligence layer (`jarvis.intelligence`):
+The `ai.*` schema drives the intelligence layer (`greatsage.intelligence`):
 
 ```yaml
 ai:
@@ -136,13 +136,13 @@ Semantics:
   (`metadata.provider`) wins, and an explicitly selected provider that is
   unhealthy is a routing error — never a silent switch to another provider.
 
-CLI: `jarvis ai health|providers|benchmark [--config PATH] [--json]`.
+CLI: `greatsage ai health|providers|benchmark [--config PATH] [--json]`.
 `ai health` exits `1` when any provider is unhealthy (or both are
 unavailable — the CLI survives and reports), `2` on config errors.
 
 ## 8. Memory Configuration (Phase 3)
 
-The `memory.*` schema drives the memory subsystem (`jarvis.memory`):
+The `memory.*` schema drives the memory subsystem (`greatsage.memory`):
 
 ```yaml
 memory:
@@ -155,7 +155,7 @@ memory:
 
 Semantics:
 
-- `enabled` gates the whole subsystem. When `false`, `jarvis health` reports
+- `enabled` gates the whole subsystem. When `false`, `greatsage health` reports
   the memory component as HEALTHY (a deliberate no-op, not an error), memory
   commands fail cleanly with an "unavailable" message, and no database file
   is created.
@@ -174,13 +174,13 @@ Environment overrides use the double-underscore convention:
 `GREATSAGE_MEMORY__DATABASE_PATH`, `GREATSAGE_MEMORY__DEFAULT_CONFIDENCE`,
 `GREATSAGE_MEMORY__RETENTION_DAYS`.
 
-CLI: `jarvis memory health|stats|list|get|delete|search [--config PATH]
+CLI: `greatsage memory health|stats|list|get|delete|search [--config PATH]
 [--json]`. `memory health` exits `1` when the subsystem is unavailable
 (e.g. corrupted database — the file is kept as-is), `2` on config errors.
 
 ## 9. Tool Security Configuration (Phase 4)
 
-The `security.*` + `tools.*` schema drives the tool system (`jarvis.tools`):
+The `security.*` + `tools.*` schema drives the tool system (`greatsage.tools`):
 
 ```yaml
 security:
@@ -218,13 +218,13 @@ Environment overrides use the double-underscore convention:
 `GREATSAGE_SECURITY__MODE`, `GREATSAGE_TOOLS__ALLOWED_ROOTS`,
 `GREATSAGE_TOOLS__EXECUTION_TIMEOUT_SECONDS`.
 
-CLI: `jarvis tools list|info|health|execute [--config PATH] [--json]
+CLI: `greatsage tools list|info|health|execute [--config PATH] [--json]
 [--approve]`. See `docs/TOOLS.md` for the full tool-system contract.
 ## 10. Agent Section (Phase 5A)
 
 | Key | Default | Ceiling | Purpose |
 |---|---|---|---|
-| `agent.enabled` | `true` | – | enable the agent service and `jarvis agent` commands |
+| `agent.enabled` | `true` | – | enable the agent service and `greatsage agent` commands |
 | `agent.max_steps` | `12` | `25` | maximum generate steps per run |
 | `agent.max_tool_calls` | `8` | `50` | maximum tool calls per run |
 | `agent.max_wall_time_seconds` | `300` | `1800` | wall-clock budget per run |
@@ -239,13 +239,13 @@ Rules:
   at startup.
 - Run-time overrides (`--max-steps`) are clamped: the smaller applicable
   limit wins (config or ceiling).
-- `--max-steps N` on `jarvis agent run` overrides the configured step limit
+- `--max-steps N` on `greatsage agent run` overrides the configured step limit
   for that run only, still clamped to the ceiling.
 
 Environment override convention: `GREATSAGE_AGENT__MAX_STEPS`,
 `GREATSAGE_AGENT__ENABLED`.
 
-CLI: `jarvis agent health|run [--config PATH] [--json]`. See
+CLI: `greatsage agent health|run [--config PATH] [--json]`. See
 `docs/AGENTS.md` for the full agent-system contract.
 ## 11. Workspace / Planning / Task Sections (Phase 6)
 
@@ -275,13 +275,13 @@ Rules:
   `greatsage/planning/limits.py`, `greatsage/task/limits.py`); configuration
   above a ceiling is refused at startup.
 - `enabled: false` gates the whole subsystem (healthy no-op in
-  `jarvis health`; commands fail cleanly with an "unavailable" message).
+  `greatsage health`; commands fail cleanly with an "unavailable" message).
 
 Environment override convention: `GREATSAGE_WORKSPACE__MAX_ENTRIES`,
 `GREATSAGE_PLANNING__MAX_PLAN_STEPS`, `GREATSAGE_TASK__MAX_STEPS`.
 
-CLI: `jarvis workspace scan|info|health`, `jarvis planning
-create|get|list|health`, `jarvis task run|resume|list|get|cancel|health`
+CLI: `greatsage workspace scan|info|health`, `greatsage planning
+create|get|list|health`, `greatsage task run|resume|list|get|cancel|health`
 (see `docs/INTERFACES.md` §12).
 
 Note: the Phase 6 voice pipeline adds a `voice:` section (wake_word / stt
@@ -313,8 +313,8 @@ ceiling validation). `telegram` additionally fails `health` as unavailable
 until a token is present in the named env var AND at least one chat is
 allowlisted. The token never appears in files, logs, or events.
 
-CLI: `jarvis schedule add|list|remove|tick|health`,
-`jarvis telegram health|listen [--once] [--for SECONDS]`.
+CLI: `greatsage schedule add|list|remove|tick|health`,
+`greatsage telegram health|listen [--once] [--for SECONDS]`.
 
 ## 13. Memory Embeddings (roadmap Phase B)
 
@@ -331,4 +331,4 @@ Rules: off by default; enabling requires the embedding model pulled once
 down = save stands, vector missing); explicit `--semantic` search fails
 loudly instead of falling back. Vectors live in the local
 `memory_embeddings` table and die with their memory (`forget`/`delete`).
-CLI: `jarvis memory search QUERY --semantic`, `jarvis memory reindex`.
+CLI: `greatsage memory search QUERY --semantic`, `greatsage memory reindex`.

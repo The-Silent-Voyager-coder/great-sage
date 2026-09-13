@@ -1,7 +1,7 @@
 """Real voice backend tests (Vosk STT, Piper TTS, fuzzy wake-word).
 
 Vosk/Piper tests need the optional packages + local model files
-(`C:/JARVIS/models/...`); they skip cleanly without them (CI-safe).
+(`C:/GREATSAGE/models/...`); they skip cleanly without them (CI-safe).
 The fuzzy matcher is stdlib and always runs.
 """
 
@@ -18,7 +18,7 @@ from greatsage.voice.stt import VoskSTTBackend, parse_wav_pcm
 from greatsage.voice.tts import PiperTTSBackend
 from greatsage.voice.wakeword import FuzzyWakeDetector
 
-MODELS_DIR = Path("C:/JARVIS/models")
+MODELS_DIR = Path("C:/GREATSAGE/models")
 
 
 def _vosk_backend() -> VoskSTTBackend:

@@ -33,13 +33,13 @@ def test_system_info_shape(tmp_path: Path) -> None:
 
 
 def test_system_info_never_exposes_secrets_or_env(tmp_path: Path) -> None:
-    os.environ["JARVIS_TEST_SECRET_MARKER"] = "hunter2-unique"
+    os.environ["GREATSAGE_TEST_SECRET_MARKER"] = "hunter2-unique"
     try:
         result = SystemInfoTool().execute({}, make_context(tmp_path))
         serialized = json.dumps(result.output).lower()
-        assert "jarvis_test_secret_marker" not in serialized
+        assert "greatsage_test_secret_marker" not in serialized
         assert "hunter2-unique" not in serialized
         assert "api_key" not in serialized
         assert "token" not in serialized
     finally:
-        os.environ.pop("JARVIS_TEST_SECRET_MARKER", None)
+        os.environ.pop("GREATSAGE_TEST_SECRET_MARKER", None)

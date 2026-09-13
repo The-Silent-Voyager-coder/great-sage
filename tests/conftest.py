@@ -13,7 +13,7 @@ def valid_config_yaml(tmp_path: Path) -> Path:
 
     Every filesystem-writing path (all database_path values, audit log,
     tool roots) is pinned under tmp_path. Never rely on loader defaults
-    here: they resolve to the shared C:/JARVIS/data root and tests must
+    here: they resolve to the shared C:/GREATSAGE/data root and tests must
     not touch it (shared-dev-DB incident: a stray migration against the
     shared tasks.db broke every runtime boot).
     """

@@ -76,8 +76,8 @@ def test_small_output_not_truncated(tmp_path: Path) -> None:
 
 def test_env_additions_allowed(tmp_path: Path) -> None:
     info = run(
-        [PYTHON, "-c", "import os; print(os.environ.get('JARVIS_TEST_VAR'))"],
-        env={"JARVIS_TEST_VAR": "visible"},
+        [PYTHON, "-c", "import os; print(os.environ.get('GREATSAGE_TEST_VAR'))"],
+        env={"GREATSAGE_TEST_VAR": "visible"},
         context=make_context(tmp_path),
     )
     assert info["success"] is True

@@ -537,7 +537,7 @@ services, starts them from `workspace:`/`planning:`/`task:` config blocks
 (enabled-gated, ceiling-validated), registers `workspace`/`planning`/`task`
 health checks, and exposes them as `runtime.workspace/planning/task` for
 the CLI. Shutdown order is task → planning → workspace. CLI surface:
-`jarvis workspace|planning|task …` (see `docs/INTERFACES.md` §12).
+`greatsage workspace|planning|task …` (see `docs/INTERFACES.md` §12).
 
 Boundaries: the planner never emits unknown tool IDs (fixed allow-list
 mirroring the Phase 4 registry) and never executes anything — execution
@@ -545,7 +545,7 @@ belongs to the task executor. Phase 7 (autonomy) adds the planner +
 task-graph + verification loop on top; it must not bypass these facades.
 
 Phases 6 (voice), 8 (vision), 10 (HUD) ship as sibling subsystems with
-their own CLIs (`jarvis voice|vision|hud …`); vision currently has no
+their own CLIs (`greatsage voice|vision|hud …`); vision currently has no
 `vision.*` config section (config-independent service — see integration
 notes). Phase 9 (security hardening) is done: secret redaction, path/command
 policy tightening, audit safety.

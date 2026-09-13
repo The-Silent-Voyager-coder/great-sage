@@ -268,9 +268,9 @@ def test_cancel_noop(opencode: OpenCodeProvider) -> None:
 
 def test_api_key_env_used(fake_server, monkeypatch) -> None:
     fake_server.route("GET", "/global/health", 200, OPENCODE_HEALTH)
-    monkeypatch.setenv("JARVIS_OPENCODE_TOKEN", "sk-test")
+    monkeypatch.setenv("GREATSAGE_OPENCODE_TOKEN", "sk-test")
     provider = OpenCodeProvider(
-        base_url=fake_server.url, api_key_env="JARVIS_OPENCODE_TOKEN"
+        base_url=fake_server.url, api_key_env="GREATSAGE_OPENCODE_TOKEN"
     )
     provider.init()
     provider._auth_headers()  # force load

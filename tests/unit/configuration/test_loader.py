@@ -14,7 +14,7 @@ from greatsage.exceptions import ConfigurationError
 
 def test_defaults_load_without_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("GREATSAGE_CONFIG_PATH", raising=False)
-    # Hermetic against an operator-owned config/jarvis.yaml (documented setup
+    # Hermetic against an operator-owned config/sage.yaml (documented setup
     # step): point the repo-root probe at a path that cannot exist.
     monkeypatch.setattr(
         "greatsage.configuration.loader.DEFAULT_CONFIG_PATH",
@@ -23,7 +23,7 @@ def test_defaults_load_without_file(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     loaded = load_config()
     assert loaded.config_path is None
     assert loaded.source == "built-in defaults"
-    assert loaded.config.core.name == "J.A.R.V.I.S."
+    assert loaded.config.core.name == "Great Sage"
     assert loaded.config.security.default_mode is SecurityMode.ASK
     assert loaded.config.ai.opencode.base_url == "http://127.0.0.1:4096"
 

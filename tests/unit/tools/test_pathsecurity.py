@@ -14,7 +14,7 @@ from greatsage.tools.pathsecurity import (
 
 
 def test_canonicalize_absolute_stays() -> None:
-    base = Path("C:/JARVIS/workspaces")
+    base = Path("C:/GREATSAGE/workspaces")
     path = canonicalize("C:/temp/foo", base)
     assert path == Path("C:/temp/foo").resolve()
 
@@ -33,11 +33,11 @@ def test_canonicalize_keeps_base_unqualified(tmp_path: Path) -> None:
 
 
 def test_is_within() -> None:
-    root = Path("C:/JARVIS/workspaces")
-    assert is_within(Path("C:/JARVIS/workspaces/project/a.txt"), root)
-    assert is_within(Path("C:/JARVIS/workspaces"), root)
-    assert not is_within(Path("C:/JARVIS/other/x"), root)
-    assert not is_within(Path("C:/JARVIS/workspaces_extra/x"), root)
+    root = Path("C:/GREATSAGE/workspaces")
+    assert is_within(Path("C:/GREATSAGE/workspaces/project/a.txt"), root)
+    assert is_within(Path("C:/GREATSAGE/workspaces"), root)
+    assert not is_within(Path("C:/GREATSAGE/other/x"), root)
+    assert not is_within(Path("C:/GREATSAGE/workspaces_extra/x"), root)
 
 
 def test_is_within_relative_root(tmp_path: Path) -> None:

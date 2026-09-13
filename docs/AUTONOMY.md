@@ -75,8 +75,8 @@ completed steps by **step id** (correct under topo ordering).
 Report: `{plan_id, ok, errors[], warnings[], requires_approval[],
 execution_order[], max_level}`. Entry points:
 
-- `jarvis planning verify <plan_id>` (stored plans),
-- `jarvis task run PLAN --verify-only` (files, ids, or dicts — no execution),
+- `greatsage planning verify <plan_id>` (stored plans),
+- `greatsage task run PLAN --verify-only` (files, ids, or dicts — no execution),
 - `TaskService.verify_plan(plan)` (API, same reference types as `run()`).
 
 ## 5. Human-Gated Approvals
@@ -118,13 +118,13 @@ Prompts, tool-argument values, and secrets are never published.
 ## 8. CLI Reference
 
 ```text
-jarvis planning create --goal TEXT [--workspace PATH] [--json]
-jarvis planning get <plan_id> [--json]
-jarvis planning list [--json]
-jarvis planning verify <plan_id> [--json]     # exit 1 when invalid
-jarvis planning approve <plan_id> [--json]    # draft→ready, verify must pass
-jarvis planning health [--json]
-jarvis task run PLAN [--approve] [--verify-only] [--json]
+greatsage planning create --goal TEXT [--workspace PATH] [--json]
+greatsage planning get <plan_id> [--json]
+greatsage planning list [--json]
+greatsage planning verify <plan_id> [--json]     # exit 1 when invalid
+greatsage planning approve <plan_id> [--json]    # draft→ready, verify must pass
+greatsage planning health [--json]
+greatsage task run PLAN [--approve] [--verify-only] [--json]
 ```
 
 Exit codes: `0` ok/approved/verified, `1` execution/verification failure,

@@ -217,4 +217,4 @@ class SchedulerService:
 
 
 def default_database_path() -> Path:
-    return Path("C:/JARVIS/data/scheduler.db")
+    return Path("C:/GREATSAGE/data/sage-scheduler.db")

@@ -1,9 +1,9 @@
-# J.A.R.V.I.S. example configuration.
-# Copy to config/jarvis.yaml and edit. Secrets go in .env, never here.
+# Great Sage example configuration.
+# Copy to config/sage.yaml and edit. Secrets go in .env, never here.
 # The authoritative schema is documented in docs/CONFIGURATION.md.
 
 core:
-  name: "J.A.R.V.I.S."
+  name: "Great Sage"
   data_dir: "C:/GREATSAGE/data"
   cache_dir: "C:/GREATSAGE/cache"
   logs_dir: "C:/GREATSAGE/logs"

@@ -1,7 +1,7 @@
 """Built-in default configuration.
 
-Values mirror config/jarvis.example.yaml from Phase 0.
-The Windows C:\\JARVIS root is a documented default (docs/CONFIGURATION.md),
+Values mirror config/sage.example.yaml from Phase 0.
+The Windows C:\\GREATSAGE root is a documented default (docs/CONFIGURATION.md),
 never a hard-coded path in code.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 DEFAULTS: dict[str, object] = {
     "core": {
-        "name": "J.A.R.V.I.S.",
+        "name": "Great Sage",
         "data_dir": "C:/GREATSAGE/data",
         "cache_dir": "C:/GREATSAGE/cache",
         "logs_dir": "C:/GREATSAGE/logs",
