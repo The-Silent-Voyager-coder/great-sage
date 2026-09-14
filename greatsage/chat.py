@@ -43,8 +43,8 @@ CHANNELS = 1
 SAMPLE_WIDTH = 2  # 16-bit
 CHUNK_SECONDS = 0.1
 MAX_RECORD_SECONDS = 30
-SILENCE_THRESHOLD = 100  # RMS threshold for silence detection
-SILENCE_TIMEOUT = 1.5  # seconds of silence to stop recording
+SILENCE_THRESHOLD = 60  # RMS threshold for silence detection (mic is quiet)
+SILENCE_TIMEOUT = 2.0  # seconds of silence to stop recording (longer to avoid cutoff)
 
 # Session limits
 MAX_HISTORY_TURNS = 20  # keep last N exchanges in context

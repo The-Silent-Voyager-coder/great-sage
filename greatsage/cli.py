@@ -2642,7 +2642,11 @@ def _cmd_chat(args: argparse.Namespace) -> int:
         return EXIT_FAILURE
 
     # Suppress startup logs AFTER runtime.init (setup_logging reconfigures root)
-    logging.getLogger("greatsage").setLevel(logging.WARNING)
+    # Clear all handlers so JSON stops printing to stdout
+    _logger = logging.getLogger("greatsage")
+    _logger.handlers.clear()
+    _logger.setLevel(logging.WARNING)
+    _logger.propagate = False
 
     voice: VoiceService | None = None
     if not text_mode:
