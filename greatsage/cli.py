@@ -58,6 +58,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import sys
 import uuid
 from collections.abc import Sequence
@@ -2630,6 +2631,9 @@ def _cmd_chat(args: argparse.Namespace) -> int:
 
     text_mode = getattr(args, "text", False)
     device = getattr(args, "device", None)
+
+    # Quiet the logs for interactive chat — only warnings+ matter
+    logging.getLogger("greatsage").setLevel(logging.WARNING)
 
     try:
         runtime = _runtime_from_args(args)

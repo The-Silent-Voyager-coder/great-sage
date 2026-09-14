@@ -288,4 +288,5 @@ class IntelligenceService:
                 )
             )
         except Exception as exc:
-            log.warning("event publish failed: %s", exc, extra={"component": "intelligence"})
+            # In CLI context there's no event loop — events are best-effort
+            log.debug("event publish skipped: %s", exc, extra={"component": "intelligence"})
