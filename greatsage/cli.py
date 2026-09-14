@@ -2628,22 +2628,47 @@ def _cmd_chat(args: argparse.Namespace) -> int:
         for i, d in enumerate(sd.query_devices()):
             if d["max_input_channels"] > 0:
                 default = " (default)" if i == sd.default.device[0] else ""
-                print(f"  [{i}] {d['name']} ({d['max_input_channels']}ch){default}")
+                print(
+                    f"  [{i}] {d['name']} "
+                    f"({d['max_input_channels']}ch, "
+                    f"{int(d['default_samplerate'])}Hz){default}"
+                )
         return EXIT_OK
 
     # Handle --test-mic before runtime startup
     if getattr(args, "test_mic", False):
-        from greatsage.chat import _record_chunk, _rms
+        import sounddevice as sd
+
+        from greatsage.chat import _native_rate, _rms
 
         device = getattr(args, "device", None)
-        print(f"Testing mic (device={device or 'default'}) for 5s — SPEAK NOW.\n")
+        try:
+            native_rate, native_ch = _native_rate(device)
+        except Exception as exc:
+            print(f"Mic error: {exc}")
+            print("Try a different --device (see --list-devices).")
+            return EXIT_FAILURE
+        print(
+            f"Testing mic (device={device or 'default'}, "
+            f"{native_rate}Hz x{native_ch}) for 5s — SPEAK NOW.\n"
+        )
         peak_seen = 0.0
-        for i in range(50):
-            chunk = _record_chunk(device)
-            rms = _rms(chunk)
-            peak_seen = max(peak_seen, rms)
-            bar = "#" * min(40, int(rms / 20))
-            print(f"  {i+1:2d}: rms={rms:5.0f} |{bar}")
+        try:
+            block = max(1, int(native_rate * 0.1))
+            with sd.InputStream(
+                samplerate=native_rate, channels=native_ch,
+                dtype="int16", device=device, blocksize=block,
+            ) as stream:
+                for i in range(50):
+                    data, _ovf = stream.read(block)
+                    rms = _rms(data.tobytes())
+                    peak_seen = max(peak_seen, rms)
+                    bar = "#" * min(40, int(rms / 20))
+                    print(f"  {i+1:2d}: rms={rms:5.0f} |{bar}")
+        except Exception as exc:
+            print(f"\nMic error: {exc}")
+            print("Try a different --device (see --list-devices).")
+            return EXIT_FAILURE
         print(f"\nPeak RMS: {peak_seen:.0f}")
         if peak_seen < 10:
             print("NO AUDIO — mic is silent. Try a different --device, or check")

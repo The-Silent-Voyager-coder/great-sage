@@ -8,8 +8,10 @@ from unittest.mock import MagicMock, patch
 from greatsage.chat import (
     EXIT_COMMANDS,
     MAX_HISTORY_TURNS,
+    SAMPLE_RATE,
     SYSTEM_PROMPT,
     ChatSession,
+    _resample_mono,
     _rms,
 )
 from greatsage.configuration.loader import load_config
@@ -129,6 +131,37 @@ class TestRMS:
         data = struct.pack(f"<{len(samples)}h", *samples)
         rms = _rms(data)
         assert rms > 0
+
+
+class TestResample:
+    def test_empty(self) -> None:
+        assert _resample_mono(b"", 44100, 1) == b""
+
+    def test_passthrough_16k_mono(self) -> None:
+        import struct
+
+        samples = [1000, -1000, 2000, -2000]
+        data = struct.pack(f"<{len(samples)}h", *samples)
+        assert _resample_mono(data, SAMPLE_RATE, 1) == data
+
+    def test_stereo_to_mono(self) -> None:
+        import struct
+
+        # L=1000, R=3000 -> mono avg = 2000
+        data = struct.pack("<4h", 1000, 3000, 1000, 3000)
+        out = _resample_mono(data, SAMPLE_RATE, 2)
+        samples = struct.unpack(f"<{len(out) // 2}h", out)
+        assert len(samples) == 2
+        assert all(s == 2000 for s in samples)
+
+    def test_44100_to_16k(self) -> None:
+        import struct
+
+        samples = [1000] * 4410  # 0.1s at 44.1kHz
+        data = struct.pack(f"<{len(samples)}h", *samples)
+        out = _resample_mono(data, 44100, 1)
+        # 0.1s at 16kHz = 1600 samples
+        assert len(out) // 2 == 1600
 
 
 class TestExitCommands:

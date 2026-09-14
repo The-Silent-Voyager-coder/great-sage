@@ -53,6 +53,39 @@ MAX_TURNS = 100  # hard cap per session
 EXIT_COMMANDS = frozenset({"exit", "quit", "goodbye", "bye", "stop", "shut down"})
 
 
+def _native_rate(device: int | None) -> tuple[int, int]:
+    """Return (sample_rate, channels) the device actually supports."""
+    import sounddevice as sd
+
+    info = sd.query_devices(device if device is not None else sd.default.device[0])
+    return int(info["default_samplerate"]), min(2, int(info["max_input_channels"]))
+
+
+def _resample_mono(pcm: bytes, src_rate: int, src_ch: int) -> bytes:
+    """Convert arbitrary-rate multi-channel PCM to 16kHz mono (linear interp)."""
+    import numpy as np
+
+    if not pcm:
+        return pcm
+    samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+    if src_ch > 1:
+        samples = samples.reshape(-1, src_ch).mean(axis=1)
+    if src_rate == SAMPLE_RATE:
+        return samples.astype(np.int16).tobytes()
+    # Linear-interpolation resample
+    src_n = len(samples)
+    dst_n = int(src_n * SAMPLE_RATE / src_rate)
+    if dst_n == 0:
+        return b""
+    src_idx = np.linspace(0, src_n - 1, dst_n)
+    lo = np.floor(src_idx).astype(np.int64)
+    hi = np.minimum(lo + 1, src_n - 1)
+    frac = (src_idx - lo).astype(np.float32)
+    out = samples[lo] * (1 - frac) + samples[hi] * frac
+    out = np.clip(out, -32768, 32767)
+    return out.astype(np.int16).tobytes()
+
+
 def _record_chunk(device: int | None = None) -> bytes:
     """Record one chunk of audio from the microphone. Returns raw PCM bytes."""
     import sounddevice as sd
@@ -76,44 +109,73 @@ def _rms(data: bytes) -> float:
 
 
 def record_from_mic(device: int | None = None) -> bytes | None:
-    """Record from microphone until silence. Returns WAV bytes or None if too short."""
+    """Record from microphone until silence. Returns WAV bytes or None if too short.
+
+    Uses a single persistent InputStream at the device's native rate
+    (open/close churn returns zeros on some drivers), then resamples
+    to 16kHz mono for Vosk.
+    """
+    import sounddevice as sd
+
     print("  listening...", end="", flush=True)
-    all_pcm = bytearray()
-    silence_start = None
-    started = time.monotonic()
-    has_speech = False  # only apply silence timeout after first speech
 
     try:
-        while True:
-            elapsed = time.monotonic() - started
-            if elapsed > MAX_RECORD_SECONDS:
-                break
+        native_rate, native_ch = _native_rate(device)
+    except Exception as exc:
+        print(f"\n  (mic error: {exc})")
+        return None
 
-            chunk = _record_chunk(device)
-            all_pcm.extend(chunk)
+    block = max(1, int(native_rate * CHUNK_SECONDS))
+    raw_chunks: list[bytes] = []
+    silence_start = None
+    has_speech = False  # only apply silence timeout after first speech
+    started = time.monotonic()
 
-            rms = _rms(chunk)
-            if rms >= SILENCE_THRESHOLD:
-                has_speech = True
-                silence_start = None
-            elif has_speech:
-                if silence_start is None:
-                    silence_start = time.monotonic()
-                elif time.monotonic() - silence_start > SILENCE_TIMEOUT:
+    try:
+        with sd.InputStream(
+            samplerate=native_rate,
+            channels=native_ch,
+            dtype="int16",
+            device=device,
+            blocksize=block,
+        ) as stream:
+            while True:
+                elapsed = time.monotonic() - started
+                if elapsed > MAX_RECORD_SECONDS:
                     break
+
+                data, _overflowed = stream.read(block)
+                chunk = data.tobytes()
+                raw_chunks.append(chunk)
+
+                rms = _rms(chunk)
+                if rms >= SILENCE_THRESHOLD:
+                    has_speech = True
+                    silence_start = None
+                elif has_speech:
+                    if silence_start is None:
+                        silence_start = time.monotonic()
+                    elif time.monotonic() - silence_start > SILENCE_TIMEOUT:
+                        break
     except KeyboardInterrupt:
         print("\n  (interrupted)")
+        return None
+    except Exception as exc:
+        print(f"\n  (mic error: {exc})")
         return None
 
     print(" done")
 
-    total_seconds = len(all_pcm) / (SAMPLE_RATE * SAMPLE_WIDTH * CHANNELS)
+    raw_pcm = b"".join(raw_chunks)
+    pcm16 = _resample_mono(raw_pcm, native_rate, native_ch)
+
+    total_seconds = len(pcm16) / (SAMPLE_RATE * SAMPLE_WIDTH * CHANNELS)
     if total_seconds < 0.3:
         print("  (too short, try again)")
         return None
 
-    # Build WAV manually
-    pcm_bytes = bytes(all_pcm)
+    # Build WAV manually (always 16kHz mono after resample)
+    pcm_bytes = bytes(pcm16)
     data_size = len(pcm_bytes)
     file_size = 36 + data_size
 
