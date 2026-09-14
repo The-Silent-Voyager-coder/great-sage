@@ -200,6 +200,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--list-devices", action="store_true",
         help="list available audio devices and exit",
     )
+    chat_parser.add_argument(
+        "--test-mic", action="store_true",
+        help="show live mic levels for 5s (speak to test) and exit",
+    )
 
     ai_parser = subparsers.add_parser("ai", help="AI provider commands")
     ai_sub = ai_parser.add_subparsers(dest="ai_command", metavar="SUBCOMMAND")
@@ -2625,6 +2629,29 @@ def _cmd_chat(args: argparse.Namespace) -> int:
             if d["max_input_channels"] > 0:
                 default = " (default)" if i == sd.default.device[0] else ""
                 print(f"  [{i}] {d['name']} ({d['max_input_channels']}ch){default}")
+        return EXIT_OK
+
+    # Handle --test-mic before runtime startup
+    if getattr(args, "test_mic", False):
+        from greatsage.chat import _record_chunk, _rms
+
+        device = getattr(args, "device", None)
+        print(f"Testing mic (device={device or 'default'}) for 5s — SPEAK NOW.\n")
+        peak_seen = 0.0
+        for i in range(50):
+            chunk = _record_chunk(device)
+            rms = _rms(chunk)
+            peak_seen = max(peak_seen, rms)
+            bar = "#" * min(40, int(rms / 20))
+            print(f"  {i+1:2d}: rms={rms:5.0f} |{bar}")
+        print(f"\nPeak RMS: {peak_seen:.0f}")
+        if peak_seen < 10:
+            print("NO AUDIO — mic is silent. Try a different --device, or check")
+            print("Windows Settings > Privacy > Microphone (allow desktop apps).")
+        elif peak_seen < 100:
+            print("VERY QUIET — mic works but levels are low. Speak louder/closer.")
+        else:
+            print("Mic OK — levels look good.")
         return EXIT_OK
 
     from greatsage.chat import ChatSession
