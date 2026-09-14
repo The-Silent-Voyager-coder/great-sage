@@ -2624,7 +2624,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
     voice: VoiceService | None = None
     if not text_mode:
         voice = VoiceService()
-        voice.publisher = runtime.bus.publish
+        voice.publisher = runtime.bus.publish_nowait
         voice.start(runtime.config)
         if voice.availability != "healthy":
             print(f"greatsage chat: voice not available: {voice.detail}", file=sys.stderr)

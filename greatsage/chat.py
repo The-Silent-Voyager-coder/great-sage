@@ -37,7 +37,7 @@ CHANNELS = 1
 SAMPLE_WIDTH = 2  # 16-bit
 CHUNK_SECONDS = 0.1
 MAX_RECORD_SECONDS = 30
-SILENCE_THRESHOLD = 500  # RMS threshold for silence detection
+SILENCE_THRESHOLD = 100  # RMS threshold for silence detection
 SILENCE_TIMEOUT = 1.5  # seconds of silence to stop recording
 
 # Session limits
@@ -47,12 +47,15 @@ MAX_TURNS = 100  # hard cap per session
 EXIT_COMMANDS = frozenset({"exit", "quit", "goodbye", "bye", "stop", "shut down"})
 
 
-def _record_chunk() -> bytes:
+def _record_chunk(device: int | None = None) -> bytes:
     """Record one chunk of audio from the microphone. Returns raw PCM bytes."""
     import sounddevice as sd
 
     frames = int(SAMPLE_RATE * CHUNK_SECONDS)
-    audio = sd.rec(frames, samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16")
+    kwargs: dict = {"samplerate": SAMPLE_RATE, "channels": CHANNELS, "dtype": "int16"}
+    if device is not None:
+        kwargs["device"] = device
+    audio = sd.rec(frames, **kwargs)
     sd.wait()
     return audio.tobytes()
 
@@ -66,12 +69,13 @@ def _rms(data: bytes) -> float:
     return (sum(s * s for s in samples) / count) ** 0.5
 
 
-def record_from_mic() -> bytes | None:
+def record_from_mic(device: int | None = None) -> bytes | None:
     """Record from microphone until silence. Returns WAV bytes or None if too short."""
     print("  listening...", end="", flush=True)
     all_pcm = bytearray()
     silence_start = None
     started = time.monotonic()
+    has_speech = False  # only apply silence timeout after first speech
 
     try:
         while True:
@@ -79,17 +83,18 @@ def record_from_mic() -> bytes | None:
             if elapsed > MAX_RECORD_SECONDS:
                 break
 
-            chunk = _record_chunk()
+            chunk = _record_chunk(device)
             all_pcm.extend(chunk)
 
             rms = _rms(chunk)
-            if rms < SILENCE_THRESHOLD:
+            if rms >= SILENCE_THRESHOLD:
+                has_speech = True
+                silence_start = None
+            elif has_speech:
                 if silence_start is None:
                     silence_start = time.monotonic()
                 elif time.monotonic() - silence_start > SILENCE_TIMEOUT:
                     break
-            else:
-                silence_start = None
     except KeyboardInterrupt:
         print("\n  (interrupted)")
         return None
