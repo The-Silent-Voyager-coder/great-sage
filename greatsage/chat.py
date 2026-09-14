@@ -175,6 +175,50 @@ def play_audio(audio: bytes) -> None:
     sd.wait()
 
 
+def _amplify_wav(wav: bytes) -> bytes:
+    """Amplify quiet WAV audio so Vosk can actually understand it.
+
+    Finds the peak sample and scales up to target peak (~8000).
+    Clipping is avoided; silence is left alone.
+    """
+    if len(wav) < 44:
+        return wav
+
+    # Find data chunk
+    pos = 12
+    data_start = None
+    data_size = 0
+    while pos < len(wav) - 8:
+        chunk_id = wav[pos : pos + 4]
+        chunk_size = struct.unpack("<I", wav[pos + 4 : pos + 8])[0]
+        if chunk_id == b"data":
+            data_start = pos + 8
+            data_size = chunk_size
+            break
+        pos += 8 + chunk_size
+
+    if data_start is None or data_size == 0:
+        return wav
+
+    # Parse samples
+    count = data_size // 2
+    samples = list(struct.unpack(f"<{count}h", wav[data_start : data_start + count * 2]))
+
+    peak = max((abs(s) for s in samples), default=0)
+    if peak < 100:
+        return wav  # too quiet to be speech
+
+    target_peak = 8000
+    gain = min(target_peak / peak, 30.0)  # cap gain at 30x
+
+    amplified = struct.pack(
+        f"<{count}h",
+        *[max(-32768, min(32767, int(s * gain))) for s in samples],
+    )
+
+    return wav[:data_start] + amplified
+
+
 class ChatSession:
     """Manages a conversational chat loop (voice or text mode)."""
 
@@ -233,6 +277,9 @@ class ChatSession:
         wav_bytes = record_from_mic(device=self._device)
         if wav_bytes is None:
             return True
+
+        # Amplify weak audio before sending to Vosk
+        wav_bytes = _amplify_wav(wav_bytes)
 
         try:
             transcript = self._voice.listen(audio=wav_bytes, session_id=self._session_id)

@@ -379,4 +379,5 @@ class VoiceService:
                 )
             )
         except Exception as exc:
-            log.warning("voice event publish failed: %s", exc, extra={"component": "voice"})
+            # In CLI context there's no event loop — events are best-effort
+            log.debug("voice event publish skipped: %s", exc, extra={"component": "voice"})

@@ -2632,9 +2632,6 @@ def _cmd_chat(args: argparse.Namespace) -> int:
     text_mode = getattr(args, "text", False)
     device = getattr(args, "device", None)
 
-    # Quiet the logs for interactive chat — only warnings+ matter
-    logging.getLogger("greatsage").setLevel(logging.WARNING)
-
     try:
         runtime = _runtime_from_args(args)
     except ConfigurationError as exc:
@@ -2643,6 +2640,9 @@ def _cmd_chat(args: argparse.Namespace) -> int:
     except JarvisError as exc:
         print(f"greatsage chat: runtime startup failed: {exc}", file=sys.stderr)
         return EXIT_FAILURE
+
+    # Suppress startup logs AFTER runtime.init (setup_logging reconfigures root)
+    logging.getLogger("greatsage").setLevel(logging.WARNING)
 
     voice: VoiceService | None = None
     if not text_mode:
