@@ -179,11 +179,13 @@ class ChatSession:
         *,
         voice: VoiceService | None = None,
         text_mode: bool = False,
+        device: int | None = None,
     ) -> None:
         self._config = config
         self._intelligence = intelligence
         self._voice = voice
         self._text_mode = text_mode
+        self._device = device
         self._history: list[Message] = [Message.system(SYSTEM_PROMPT)]
         self._session_id = f"chat_{uuid.uuid4().hex[:12]}"
         self._turn = 0
@@ -222,7 +224,7 @@ class ChatSession:
 
     def _voice_turn(self) -> bool:
         """One voice cycle: record -> transcribe -> generate -> speak. Returns False to stop."""
-        wav_bytes = record_from_mic()
+        wav_bytes = record_from_mic(device=self._device)
         if wav_bytes is None:
             return True
 

@@ -191,6 +191,14 @@ def _build_parser() -> argparse.ArgumentParser:
     chat_parser.add_argument(
         "--text", action="store_true", help="text mode: type input instead of voice"
     )
+    chat_parser.add_argument(
+        "--device", type=int, default=None,
+        help="microphone device index (run with --list-devices to see options)",
+    )
+    chat_parser.add_argument(
+        "--list-devices", action="store_true",
+        help="list available audio devices and exit",
+    )
 
     ai_parser = subparsers.add_parser("ai", help="AI provider commands")
     ai_sub = ai_parser.add_subparsers(dest="ai_command", metavar="SUBCOMMAND")
@@ -2608,9 +2616,20 @@ def _cmd_briefing(args: argparse.Namespace) -> int:
 
 def _cmd_chat(args: argparse.Namespace) -> int:
     """Conversation loop: voice (mic -> transcribe -> generate -> speak) or text."""
+    # Handle --list-devices before runtime startup
+    if getattr(args, "list_devices", False):
+        import sounddevice as sd
+        print("Audio input devices:")
+        for i, d in enumerate(sd.query_devices()):
+            if d["max_input_channels"] > 0:
+                default = " (default)" if i == sd.default.device[0] else ""
+                print(f"  [{i}] {d['name']} ({d['max_input_channels']}ch){default}")
+        return EXIT_OK
+
     from greatsage.chat import ChatSession
 
     text_mode = getattr(args, "text", False)
+    device = getattr(args, "device", None)
 
     try:
         runtime = _runtime_from_args(args)
@@ -2635,6 +2654,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
 
     session = ChatSession(
         runtime.config, runtime.intelligence, voice=voice, text_mode=text_mode,
+        device=device,
     )
     try:
         session.run()
