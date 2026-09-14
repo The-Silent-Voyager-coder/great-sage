@@ -204,6 +204,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--test-mic", action="store_true",
         help="show live mic levels for 5s (speak to test) and exit",
     )
+    chat_parser.add_argument(
+        "--provider", metavar="NAME", default=None,
+        help="AI provider override (e.g. 'opencode' to route via OpenCode)",
+    )
 
     ai_parser = subparsers.add_parser("ai", help="AI provider commands")
     ai_sub = ai_parser.add_subparsers(dest="ai_command", metavar="SUBCOMMAND")
@@ -2683,6 +2687,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
 
     text_mode = getattr(args, "text", False)
     device = getattr(args, "device", None)
+    provider = getattr(args, "provider", None)
 
     try:
         runtime = _runtime_from_args(args)
@@ -2714,7 +2719,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
 
     session = ChatSession(
         runtime.config, runtime.intelligence, voice=voice, text_mode=text_mode,
-        device=device,
+        device=device, provider=provider,
     )
     try:
         session.run()

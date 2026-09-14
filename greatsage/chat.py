@@ -295,12 +295,14 @@ class ChatSession:
         voice: VoiceService | None = None,
         text_mode: bool = False,
         device: int | None = None,
+        provider: str | None = None,
     ) -> None:
         self._config = config
         self._intelligence = intelligence
         self._voice = voice
         self._text_mode = text_mode
         self._device = device
+        self._provider = provider
         self._history: list[Message] = [Message.system(SYSTEM_PROMPT)]
         self._session_id = f"chat_{uuid.uuid4().hex[:12]}"
         self._turn = 0
@@ -311,10 +313,13 @@ class ChatSession:
     def _generate(self, user_text: str) -> str | None:
         """Send user text to the LLM and return the reply, or None on error."""
         self._history.append(Message.user(user_text))
+        meta: dict = {"source": "chat", "session_id": self._session_id}
+        if self._provider:
+            meta["provider"] = self._provider
         request = AIRequest(
             request_id=f"chat_{uuid.uuid4().hex[:8]}",
             messages=list(self._history),
-            metadata={"source": "chat", "session_id": self._session_id},
+            metadata=meta,
         )
         try:
             response = self._intelligence.generate(request)
