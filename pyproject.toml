@@ -24,6 +24,10 @@ dependencies = [
     # Both run fully offline on Windows with model files under C:/GREATSAGE/models.
     "vosk>=0.3.45",
     "piper-tts>=1.8.0",
+    # Chat voice loop: sounddevice for mic capture/playback, numpy for
+    # PCM resampling/amplification (chat.py imports both directly).
+    "sounddevice>=0.4.6",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]

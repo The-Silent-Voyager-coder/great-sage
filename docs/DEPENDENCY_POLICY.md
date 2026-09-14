@@ -56,10 +56,11 @@ swappable behind the voice pipeline interfaces (`docs/ARCHITECTURE.md` §4).
 | `PyYAML` | `>=6.0` | 1 | The configuration format is YAML (`config/sage.yaml`); parsing it safely requires a maintained, tested YAML library — stdlib has none | Hand-rolled parser (security risk, maintenance burden); JSON/TOML format change (violates the Phase 0 YAML contract); `ruamel.yaml` (unnecessary round-trip API) | Phase 1 (2026) |
 | `vosk` | `>=0.3.45` | Roadmap A | Offline small-model STT for real voice input. Transcribes 16 kHz WAV fully on-device (CPU, ~1×realtime on small model); Apache-2.0; Windows wheels for 3.13; no account, no telemetry | `faster-whisper` (its `av` dependency has no Python 3.13 Windows wheels — install fails; also 3–10× heavier); cloud STT (violates local-first + zero-cost) | 2026-09 |
 | `piper-tts` | `>=1.8.0` | Roadmap A | Offline neural TTS (ONNX voices, ~60 MB each) for real voice output. No account, no network at synthesis time; Windows wheels for 3.13; voices are runtime assets under `C:/GREATSAGE/models/piper` (§4) | `chatterbox-tts` (torch-class weight, GPU-hungry, overkill for utterances); cloud TTS (violates local-first + zero-cost); espeak-ng (robotic, worse intelligibility) | 2026-09 |
+| `sounddevice` | `>=0.4.6` | Chat | Mic capture + speaker playback for `greatsage chat` voice loop (PortAudio bindings; Windows wheels for 3.13; stdlib has no audio I/O) | `pyaudio` (stale wheels, harder install); `playsound` (playback only, no capture) | 2026-09 |
+| `numpy` | `>=1.26` | Chat | PCM resampling (native rate → 16 kHz for Vosk) + amplification + WAV playback float conversion in `chat.py`; already a transitive dep via Piper/sounddevice, pinned direct since we import it | Pure-Python resample (10–50× slower on 15s clips); `scipy` (heavy for one interp) | 2026-09 |
 
 Rejected (recorded so nobody retries blindly): `faster-whisper==1.0.3`
-(`av` wheel build fails on Python 3.13 Windows), `sounddevice==0.4.7`
-(installed then removed — mic capture deferred, no speculative deps),
+(`av` wheel build fails on Python 3.13 Windows),
 `openwakeword` (unneeded: donor-proven fuzzy text matching covers wake-word
 tolerance with stdlib `difflib`).
 
