@@ -286,10 +286,18 @@ def test_cancelled_during_tool_loop() -> None:
 def test_wall_clock_timeout() -> None:
     # Distinct calls per step so loop detection can never fire first: the
     # only possible outcome on any machine speed is the wall clock.
-    handlers = [
-        tool_handler("filesystem.list", {"path": f"/wall-clock-{index}"})
-        for index in range(5)
-    ]
+    import time
+
+    def timing_handler(index: int):
+        base = tool_handler("filesystem.list", {"path": f"/wall-clock-{index}"})
+
+        def handle(request):
+            time.sleep(0.002)
+            return base(request)
+
+        return handle
+
+    handlers = [timing_handler(index) for index in range(20)]
     intelligence = FakeIntelligence(handlers, keep_last=False)
     tools = FakeTools()
     result, status, _ = _run(
