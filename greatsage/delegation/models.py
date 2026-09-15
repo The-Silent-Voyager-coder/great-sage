@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from greatsage.delegation.limits import (
@@ -236,7 +236,11 @@ class DelegationRequest:
             raise DelegationValidationError("delegation request requires a non-empty prompt")
         if not str(self.working_directory).strip():
             raise DelegationValidationError("delegation request requires a working directory")
-        if not self.working_directory.is_absolute():
+        is_abs = (
+            self.working_directory.is_absolute()
+            or PureWindowsPath(str(self.working_directory)).is_absolute()
+        )
+        if not is_abs:
             raise DelegationValidationError(
                 f"working directory must be absolute: {self.working_directory}"
             )

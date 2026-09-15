@@ -619,7 +619,12 @@ def _matches(kind: Kind, value: Any) -> bool:
     if kind == "nonempty_str":
         return isinstance(value, str) and bool(value.strip())
     if kind == "path":
-        return isinstance(value, str) and bool(value.strip()) and Path(value).is_absolute()
+        from pathlib import PureWindowsPath
+        return (
+            isinstance(value, str)
+            and bool(value.strip())
+            and (Path(value).is_absolute() or PureWindowsPath(value).is_absolute())
+        )
     if kind == "path_list":
         return _matches_path_list(value)
     if kind == "int_list":
@@ -675,9 +680,10 @@ def coerce_env(kind: Kind, raw: str) -> Any:
             raise ValueError(f"expected number between 0.0 and 1.0, got {raw!r}")
         return value
     if kind == "path_list":
-        items = raw.split(os.pathsep)
+        sep = ";" if ";" in raw else os.pathsep
+        items = raw.split(sep)
         if not all(bool(item.strip()) for item in items):
-            raise ValueError(f"expected path list separated by {os.pathsep!r}, got {raw!r}")
+            raise ValueError(f"expected path list separated by {sep!r}, got {raw!r}")
         return items
     return raw
 

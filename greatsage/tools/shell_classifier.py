@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from enum import StrEnum
-from pathlib import Path
+from pathlib import PureWindowsPath
 
 
 class CommandClass(StrEnum):
@@ -219,7 +219,7 @@ _PYTHON_INFO_FLAGS = frozenset({"--version", "-V", "--help", "-h", "-VV"})
 
 
 def _exe_name(command: Sequence[str]) -> str:
-    name = Path(command[0]).name.casefold()
+    name = PureWindowsPath(command[0]).name.casefold()
     if name.endswith(".exe"):
         name = name[:-4]
     return name

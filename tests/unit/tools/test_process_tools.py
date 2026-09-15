@@ -22,6 +22,7 @@ def make_context(tmp_path: Path) -> ToolContext:
     )
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="process tools require Windows (tasklist)")
 def test_process_list_returns_entries(tmp_path: Path) -> None:
     result = ProcessListTool().execute({}, make_context(tmp_path))
     assert result.success
@@ -31,6 +32,7 @@ def test_process_list_returns_entries(tmp_path: Path) -> None:
         assert "name" in process and "pid" in process and "memory_bytes" in process
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="process tools require Windows (tasklist)")
 def test_process_info_current_pid_running(tmp_path: Path) -> None:
     result = ProcessInfoTool().execute({"pid": os.getpid()}, make_context(tmp_path))
     assert result.success
@@ -38,6 +40,7 @@ def test_process_info_current_pid_running(tmp_path: Path) -> None:
     assert result.output["pid"] == os.getpid()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="process tools require Windows (tasklist)")
 def test_process_info_unknown_pid_not_running(tmp_path: Path) -> None:
     result = ProcessInfoTool().execute({"pid": 999999999}, make_context(tmp_path))
     assert result.success

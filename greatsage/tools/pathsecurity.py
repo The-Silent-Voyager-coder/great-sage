@@ -10,7 +10,7 @@ a policy hook, not an enormous sensitive-file database).
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from greatsage.tools.environment import is_secret_name
 
@@ -61,16 +61,17 @@ def _is_protected_name(name: str) -> bool:
 def canonicalize(path: str, base: Path) -> Path:
     """Expand ~, make absolute against `base`, resolve symlinks if possible."""
     candidate = Path(path).expanduser()
-    if not candidate.is_absolute():
+    if not candidate.is_absolute() and not PureWindowsPath(path).is_absolute():
         candidate = base / candidate
     return candidate.resolve()
 
 
 def is_within(path: Path, root: Path) -> bool:
     """Containment check; case-insensitive on Windows (pathlib semantics)."""
+    resolved_path = path.resolve()
     resolved_root = root.resolve()
     try:
-        path.relative_to(resolved_root)
+        resolved_path.relative_to(resolved_root)
         return True
     except ValueError:
         return False

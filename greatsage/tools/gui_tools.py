@@ -39,8 +39,11 @@ def _windows_only(tool_id: str) -> ToolResult | None:
 
 def _capture_bmp() -> tuple[int, int, bytes]:
     """Capture the primary monitor; returns (width, height, BMP file bytes)."""
-    user32 = ctypes.windll.user32
-    gdi32 = ctypes.windll.gdi32
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
+        raise OSError("windll is not available on this platform")
+    user32 = windll.user32
+    gdi32 = windll.gdi32
     width = user32.GetSystemMetrics(0)
     height = user32.GetSystemMetrics(1)
     if width <= 0 or height <= 0:
@@ -102,7 +105,10 @@ def _capture_bmp() -> tuple[int, int, bytes]:
 
 
 def _click_at(x: int, y: int, right: bool) -> None:
-    user32 = ctypes.windll.user32
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
+        raise OSError("windll is not available on this platform")
+    user32 = windll.user32
     if not user32.SetCursorPos(x, y):
         raise OSError(f"SetCursorPos({x}, {y}) failed")
     time.sleep(0.05)
@@ -113,7 +119,10 @@ def _click_at(x: int, y: int, right: bool) -> None:
 
 
 def _type_text(text: str, enter: bool) -> None:
-    user32 = ctypes.windll.user32
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
+        raise OSError("windll is not available on this platform")
+    user32 = windll.user32
     KEYEVENTF_KEYUP = 0x0002
     KEYEVENTF_UNICODE = 0x0004
     VK_RETURN = 0x0D
