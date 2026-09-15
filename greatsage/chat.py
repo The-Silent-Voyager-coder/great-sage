@@ -14,6 +14,7 @@ import logging
 import struct
 import time
 import uuid
+from typing import Any
 
 from greatsage.configuration.model import JarvisConfig
 from greatsage.exceptions import JarvisError, VoiceValidationError
@@ -67,7 +68,7 @@ def _resample_mono(pcm: bytes, src_rate: int, src_ch: int) -> bytes:
 
     if not pcm:
         return pcm
-    samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+    samples: Any = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
     if src_ch > 1:
         samples = samples.reshape(-1, src_ch).mean(axis=1)
     if src_rate == SAMPLE_RATE:
@@ -225,7 +226,7 @@ def play_audio(audio: bytes) -> None:
     bits = struct.unpack("<H", audio[34:36])[0]
 
     if bits == 16:
-        samples = np.frombuffer(data, dtype=np.int16)
+        samples: Any = np.frombuffer(data, dtype=np.int16)
     else:
         raise VoiceValidationError(f"unsupported bit depth: {bits}")
 
@@ -320,7 +321,7 @@ class ChatSession:
             self._history.pop()
             return None
 
-        reply = response.content.strip()
+        reply = (response.content or "").strip()
         if reply:
             self._history.append(Message.assistant(reply))
         return reply or None
@@ -343,6 +344,8 @@ class ChatSession:
         # Amplify weak audio before sending to Vosk
         wav_bytes = _amplify_wav(wav_bytes)
 
+        if self._voice is None:
+            return True
         try:
             transcript = self._voice.listen(audio=wav_bytes, session_id=self._session_id)
         except VoiceValidationError as exc:

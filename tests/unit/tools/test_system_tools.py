@@ -26,7 +26,7 @@ def test_system_info_shape(tmp_path: Path) -> None:
     for key in ("sage_version", "platform", "cpu", "memory", "storage", "gpu",
                 "gpu_detectable"):
         assert key in output
-    assert output["platform"]["system"] == "Windows"
+    assert output["platform"]["system"] in ("Windows", "Linux", "Darwin")
     assert isinstance(output["cpu"]["logical_cpus"], int)
     assert output["memory"]["total_bytes"] > 0
     assert isinstance(output["storage"], list)

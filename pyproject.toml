@@ -33,6 +33,7 @@ dev = [
     "mypy>=1.10",
     "types-PyYAML>=6.0",
     "ruff>=0.5",
+    "numpy<2.0.0",
 ]
 
 [project.scripts]
@@ -67,4 +68,4 @@ check_untyped_defs = true
 module = ["vosk", "piper.*", "numpy", "numpy.*", "onnxruntime.*", "google.protobuf.*", "sounddevice"]
 ignore_errors = true
 ignore_missing_imports = true
-follow_imports = "skip"
+follow_imports = "silent"
