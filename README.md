@@ -52,8 +52,9 @@ foundation; Phase 4 adds the permissioned tool system on top of all three:
 - **Failure isolation**: a broken tool configuration degrades the subsystem
   to `unavailable` while the rest of the runtime keeps working
 - **CLI**: `greatsage tools list|info|health|execute [--json] [--approve]`
-- **No new dependencies**: stdlib only; PyYAML remains the sole runtime
-  dependency
+- **Minimal dependencies**: Phase 4 core is stdlib-only + PyYAML; roadmap
+  voice/chat adds justified local-only deps (vosk, piper-tts, sounddevice,
+  numpy — see `docs/DEPENDENCY_POLICY.md` §5)
 
 ## Current Status (Phase 5A)
 
@@ -148,7 +149,7 @@ greatsage/
 │   └── ...              → autonomy (Phase 7, later)
 ├── tests/           → test suite (per-module subdirectories)
 ├── .env.example     → secret template (real secrets never committed)
-└── pyproject.toml   → project metadata; PyYAML is the only runtime dependency
+└── pyproject.toml   → project metadata; runtime deps tracked in docs/DEPENDENCY_POLICY.md §5
 ```
 
 ## Quick Start

@@ -1,7 +1,7 @@
 """Minimal stdlib HTTP transport for provider adapters.
 
-No runtime dependencies beyond the standard library (PyYAML stays the only
-third-party runtime dependency — docs/DEPENDENCY_POLICY.md). Exceptions raised
+This module uses only the standard library (full runtime dependency list —
+docs/DEPENDENCY_POLICY.md). Exceptions raised
 here are wrapped by adapters into ProviderError subclasses.
 """
 

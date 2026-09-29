@@ -196,8 +196,8 @@ Without changing the §2 risk vocabulary or the allow/ask/deny matrix:
   operation is classified at least `LOW_WRITE`/`HIGH_WRITE` (a click on
   "Delete" is `HIGH_WRITE`) and goes through the standard
   `ToolService.execute` pipeline — vision tools add no bypass.
-- **Local-first.** Voice/vision pipelines run on-machine with stdlib-only
-  code; no audio, transcript, or image leaves the machine without explicit
+- **Local-first.** Voice/vision pipelines run on-machine with local-only
+  approved dependencies (see `docs/DEPENDENCY_POLICY.md` §5); no audio, transcript, or image leaves the machine without explicit
   user approval per destination.
 ## 12. Agent Loop Security (Phase 5A)
 

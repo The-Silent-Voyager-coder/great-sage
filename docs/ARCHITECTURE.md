@@ -179,8 +179,8 @@ greatsage/intelligence/
 ├── registry.py    ProviderRegistry: register (dup-id rejected), get,
 │                  enumerate, health, initialize/shutdown, snapshot
 ├── router.py      deterministic Router + Route record
-├── transport.py   stdlib urllib JSON/text helpers (PyYAML stays the only
-│                  third-party runtime dependency)
+├── transport.py   stdlib urllib JSON/text helpers (this module is stdlib-only;
+│                  full runtime dependency list in docs/DEPENDENCY_POLICY.md §5)
 ├── ollama.py      OllamaProvider (local) - /api/tags health + /api/chat
 ├── opencode.py    OpenCodeProvider (remote) - /global/health, /doc, session,
 │                  prompt_async - connection only in Phase 2, no delegation
