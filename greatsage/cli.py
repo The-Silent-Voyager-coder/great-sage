@@ -2716,6 +2716,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
             voice.shutdown()
             voice = None
             # Fall through to text mode rather than failing
+            text_mode = True
 
     session = ChatSession(
         runtime.config, runtime.intelligence, voice=voice, text_mode=text_mode,

@@ -283,14 +283,21 @@ def test_cancelled_during_tool_loop() -> None:
     assert status.reason == "cancelled"
 
 
-def test_wall_clock_timeout() -> None:
-    # Distinct calls per step so loop detection can never fire first: the
-    # only possible outcome on any machine speed is the wall clock.
-    handlers = [
-        tool_handler("filesystem.list", {"path": f"/wall-clock-{index}"})
-        for index in range(5)
-    ]
-    intelligence = FakeIntelligence(handlers, keep_last=False)
+def test_wall_clock_timeout(monkeypatch) -> None:
+    # Scripted clock so expiry is deterministic on any machine speed: the
+    # run starts at t0 and every later read is past the budget, so the
+    # pre-step check fires before any provider step (no race with loop
+    # detection or step limits, regardless of how fast the machine is).
+    ticks = {"n": 0}
+
+    def fake_monotonic() -> float:
+        ticks["n"] += 1
+        return 1000.0 if ticks["n"] == 1 else 1000.0 + 3600.0
+
+    monkeypatch.setattr(
+        "greatsage.agent.orchestrator.time.monotonic", fake_monotonic
+    )
+    intelligence = FakeIntelligence([tool_handler("filesystem.list")], keep_last=True)
     tools = FakeTools()
     result, status, _ = _run(
         intelligence, tools, limits=AgentLimits(max_wall_time_seconds=0.0001)

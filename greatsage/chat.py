@@ -328,7 +328,9 @@ class ChatSession:
             self._history.pop()
             return None
 
-        reply = response.content.strip()
+        # Providers may return no content (e.g. tool-only or empty replies);
+        # treat that as empty rather than crashing on None.strip().
+        reply = (response.content or "").strip()
         if reply:
             self._history.append(Message.assistant(reply))
         return reply or None
@@ -344,6 +346,7 @@ class ChatSession:
 
     def _voice_turn(self) -> bool:
         """One voice cycle: record -> transcribe -> generate -> speak. Returns False to stop."""
+        assert self._voice is not None, "voice mode requires a voice service"
         wav_bytes = record_from_mic(device=self._device)
         if wav_bytes is None:
             return True
