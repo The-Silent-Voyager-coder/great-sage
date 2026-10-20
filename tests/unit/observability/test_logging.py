@@ -147,7 +147,7 @@ def test_setup_logging_writes_json_file(tmp_path: Path) -> None:
     logger.info("wrote to file", extra={"component": "test"})
     flush_logging()
 
-    log_file = tmp_path / "jarvis.log"
+    log_file = tmp_path / "sage.log"
     assert log_file.is_file()
     lines = log_file.read_text(encoding="utf-8").strip().splitlines()
     assert json.loads(lines[0])["message"] == "wrote to file"

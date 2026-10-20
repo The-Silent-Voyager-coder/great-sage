@@ -24,7 +24,7 @@ from greatsage.tools.redaction import looks_like_secret_value
 from greatsage.tools.shell_classifier import CommandClass, classify_command
 
 if TYPE_CHECKING:
-    from greatsage.configuration.model import JarvisConfig
+    from greatsage.configuration.model import SageConfig
 
 
 @runtime_checkable
@@ -183,7 +183,7 @@ class SecurityPolicy:
         self._hooks = hooks
 
     @classmethod
-    def from_config(cls, config: JarvisConfig) -> SecurityPolicy:
+    def from_config(cls, config: SageConfig) -> SecurityPolicy:
         tools = config.tools
         hooks = (
             SensitiveArgumentHook(),

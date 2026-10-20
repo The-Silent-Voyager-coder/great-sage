@@ -8,7 +8,17 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from greatsage.events.models import TASK_STEP_COMPLETED, TASK_STEP_FAILED, TASK_STEP_STARTED, Event
+from greatsage.events.models import (
+    TASK_CANCELLED,
+    TASK_COMPLETED,
+    TASK_FAILED,
+    TASK_STARTED,
+    TASK_STEP_COMPLETED,
+    TASK_STEP_FAILED,
+    TASK_STEP_STARTED,
+    TASK_TIMED_OUT,
+    Event,
+)
 from greatsage.exceptions import (
     TaskCancelledError,
     TaskLimitError,
@@ -65,14 +75,16 @@ class TaskExecutor:
         failed = 0
         completed = 0
 
-        # Load existing results for resume case (if any)
+        # Load existing results for resume. Only successful steps are skipped;
+        # failed steps must be retried on an explicit resume (a failed result
+        # from the previous attempt is replaced, not duplicated).
         existing = self._repository.get_step_results(task.id)
         completed_ids: set[str] = set()
         if existing:
-            step_results = list(existing)
+            step_results = [r for r in existing if r.success]
             completed_ids = {r.step_id for r in step_results}
-            completed = sum(1 for r in step_results if r.success)
-            failed = sum(1 for r in step_results if not r.success)
+            completed = len(step_results)
+            failed = 0
             task.current_step = len(step_results)
 
         # Phase 7 task-graph: execute in dependency order. Linear Phase 6
@@ -160,6 +172,7 @@ class TaskExecutor:
                 task.transition(TaskState.COMPLETED)
             self._repository.update_task(task)
 
+        step_results.sort(key=lambda result: (result.sequence, result.step_id))
         duration = (time.monotonic() - started) * 1000.0
         report = TaskReport(
             task_id=task.id,
@@ -266,7 +279,7 @@ class TaskExecutor:
         if self._publisher is None:
             return
         try:
-            self._publisher(Event(type="TaskStarted", source="task", task_id=task.id, payload={"plan_id": plan.id, "goal": redact_secrets(plan.goal[:120]), "total_steps": len(plan.steps), "approved": bool(task.metadata.get("human_approved", False))}))  # noqa: E501
+            self._publisher(Event(type=TASK_STARTED, source="task", task_id=task.id, payload={"plan_id": plan.id, "goal": redact_secrets(plan.goal[:120]), "total_steps": len(plan.steps), "approved": bool(task.metadata.get("human_approved", False))}))  # noqa: E501
         except Exception:
             pass
 
@@ -298,11 +311,11 @@ class TaskExecutor:
         if self._publisher is None:
             return
         try:
-            evt_type = "TaskCompleted" if report.state == TaskState.COMPLETED else "TaskFailed"
+            evt_type = TASK_COMPLETED if report.state == TaskState.COMPLETED else TASK_FAILED
             if report.state == TaskState.CANCELLED:
-                evt_type = "TaskCancelled"
+                evt_type = TASK_CANCELLED
             elif report.state == TaskState.TIMED_OUT:
-                evt_type = "TaskTimedOut"
+                evt_type = TASK_TIMED_OUT
             self._publisher(Event(type=evt_type, source="task", task_id=task.id, payload={"plan_id": report.plan_id, "state": report.state.value, "completed_steps": report.completed_steps}))  # noqa: E501
         except Exception:
             pass

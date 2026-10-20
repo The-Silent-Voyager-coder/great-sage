@@ -320,6 +320,7 @@ class AgentResult:
     model: str | None = None
     error: str | None = None
     reason: str | None = None
+    memory_references: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -335,4 +336,5 @@ class AgentResult:
             "model": self.model,
             "error": self.error,
             "reason": self.reason,
+            "memory_references": self.memory_references,
         }

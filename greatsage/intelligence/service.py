@@ -12,7 +12,7 @@ import logging
 import time
 from typing import Any
 
-from greatsage.configuration.model import AIConfig, JarvisConfig
+from greatsage.configuration.model import AIConfig, SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.events.models import (
     AI_PROVIDER_SELECTED,
@@ -53,7 +53,7 @@ class IntelligenceService:
 
     # --- lifecycle -----------------------------------------------------
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         self._register_from_config(config)
         self.router = Router(
             self.registry, default_provider=self._default_provider
@@ -79,7 +79,7 @@ class IntelligenceService:
 
     # --- configuration-driven construction -----------------------------
 
-    def _register_from_config(self, config: JarvisConfig | None) -> None:
+    def _register_from_config(self, config: SageConfig | None) -> None:
         if config is None:
             return
         ai: AIConfig = config.ai
@@ -101,6 +101,7 @@ class IntelligenceService:
                 OpenCodeProvider(
                     base_url=opencode.base_url,
                     api_key_env=opencode.api_key_env,
+                    username_env=opencode.username_env,
                     model=opencode.model,
                     timeout_seconds=opencode.timeout_seconds,
                 )

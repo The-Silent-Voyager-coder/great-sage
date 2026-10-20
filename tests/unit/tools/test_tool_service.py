@@ -43,11 +43,11 @@ def write_config(tmp_path: Path, **overrides: object) -> Path:
     allow_low = bool(overrides.pop("allow_auto_approve_read", True))
     max_bytes = int(overrides.pop("max_output_bytes", 65536))
     timeout = float(overrides.pop("execution_timeout_seconds", 10.0))
-    path = tmp_path / "jarvis.yaml"
+    path = tmp_path / "sage.yaml"
     path.write_text(
         f"""
 core:
-  name: "J.A.R.V.I.S. Tools Test"
+  name: "Great Sage Tools Test"
   data_dir: "{d}/data"
   cache_dir: "{d}/cache"
   logs_dir: "{d}/logs"
@@ -314,7 +314,9 @@ def test_registry_access_and_defaults(tmp_path: Path) -> None:
     ids = service.registry().list_ids()
     for tool_id in ("filesystem.list", "filesystem.stat", "filesystem.read",
                     "filesystem.mkdir", "filesystem.write", "process.list",
-                    "process.info", "system.info", "shell.execute"):
+                    "process.info", "system.info", "shell.execute",
+                    "voice.listen", "voice.speak", "voice.wake",
+                    "vision.capture", "vision.describe"):
         assert tool_id in ids
     assert "filesystem.delete" not in ids
     assert "process.terminate" not in ids

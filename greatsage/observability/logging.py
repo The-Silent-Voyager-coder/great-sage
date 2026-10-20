@@ -1,7 +1,7 @@
 """Structured JSON logging with correlation IDs and secret redaction.
 
-All J.A.R.V.I.S. logs are machine-readable JSON on stdout and to
-`<logs_dir>/jarvis.log` (rotating). Correlation IDs (session/task/event) are
+All Great Sage logs are machine-readable JSON on stdout and to
+`<logs_dir>/sage.log` (rotating). Correlation IDs (session/task/event) are
 carried in context variables so logs produced inside a task are correlated
 automatically. Secret-shaped values are masked before serialization as a
 defense in depth — logging code must still never log credentials.
@@ -53,13 +53,13 @@ _CONTEXT_ATTRS = frozenset({"component", "event_id", "session_id", "task_id"})
 # --- correlation context -----------------------------------------------
 
 _session_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "jarvis_session_id", default=None
+    "sage_session_id", default=None
 )
 _task_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "jarvis_task_id", default=None
+    "sage_task_id", default=None
 )
 _event_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "jarvis_event_id", default=None
+    "sage_event_id", default=None
 )
 
 
@@ -168,7 +168,7 @@ def setup_logging(
     *,
     console: bool = True,
 ) -> None:
-    """Configure the `jarvis` logger: JSON console + rotating JSON file."""
+    """Configure the `greatsage` logger: JSON console + rotating JSON file."""
     logger = logging.getLogger("greatsage")
     logger.setLevel(LOG_LEVELS.get(cfg.level, logging.INFO))
     logger.propagate = False
@@ -185,7 +185,7 @@ def setup_logging(
         logs_dir.mkdir(parents=True, exist_ok=True)
         backup_count = max(1, cfg.retention_days)
         file_handler = RotatingFileHandler(
-            logs_dir / "jarvis.log",
+            logs_dir / "sage.log",
             maxBytes=10 * 1024 * 1024,
             backupCount=backup_count,
             encoding="utf-8",
@@ -195,7 +195,7 @@ def setup_logging(
 
 
 def flush_logging() -> None:
-    """Flush every handler attached to the `jarvis` logger."""
+    """Flush every handler attached to the `greatsage` logger."""
     logger = logging.getLogger("greatsage")
     for handler in logger.handlers:
         handler.flush()

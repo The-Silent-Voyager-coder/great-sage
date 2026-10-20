@@ -16,14 +16,14 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.events.models import VISION_CAPTURED, VISION_DESCRIBED, VISION_FAILED, Event
 from greatsage.exceptions import VisionUnavailableError, VisionValidationError
 from greatsage.tools.redaction import redact_secrets
 from greatsage.vision.capture import CaptureManager, StubCaptureBackend
 from greatsage.vision.file_repository import FileVisionRepository
-from greatsage.vision.grounding import GroundingStub
+from greatsage.vision.grounding import GroundingStub, OllamaGrounding
 from greatsage.vision.limits import (
     DEFAULT_HEIGHT,
     DEFAULT_WIDTH,
@@ -49,13 +49,11 @@ def _scoped_path(
     candidate = Path(raw)
     if not candidate.is_absolute():
         raise VisionValidationError(f"capture output path must be absolute, got {raw!r}")
-    resolved = Path(str(candidate).replace("\\", "/"))
     # Canonicalize without requiring existence of the file itself.
     try:
         canonical = candidate.resolve()
     except OSError as exc:
         raise VisionValidationError(f"unresolvable output path: {exc}") from exc
-    _ = resolved
     for denied in denied_roots:
         try:
             if canonical == denied.resolve() or canonical.is_relative_to(denied.resolve()):
@@ -78,7 +76,7 @@ def _scoped_path(
 
 
 class VisionService:
-    """Facade over capture manager + grounding stub + file repository."""
+    """Facade over capture manager + local grounding + file repository."""
 
     def __init__(
         self,
@@ -86,22 +84,23 @@ class VisionService:
         limits: VisionLimits | None = None,
         repository: VisionRepository | None = None,
         capture: CaptureManager | None = None,
+        grounding: GroundingStub | OllamaGrounding | None = None,
     ) -> None:
         self._limits = limits or default_limits()
         self._repository = repository
         self._capture = capture or CaptureManager(limits=self._limits, backend=StubCaptureBackend())
-        self._grounding = GroundingStub(limits=self._limits)
+        self._grounding = grounding or GroundingStub(limits=self._limits)
         self.publisher: Any = None  # callable(event) -> None, wired by runtime
         self.availability: str = "unavailable"
         self.detail: str = "vision service not started"
-        self._config: JarvisConfig | None = None
+        self._config: SageConfig | None = None
         self._allowed_roots: tuple[Path, ...] = ()
         self._denied_roots: tuple[Path, ...] = ()
         self._session_counts: dict[str, int] = {}
 
     # --- lifecycle -----------------------------------------------------
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         self._config = config
         if config is None:
             self.availability = "unavailable"
@@ -117,6 +116,7 @@ class VisionService:
             self.availability = "healthy"
             self.detail = (
                 f"vision ready (backend={self._capture.backend_name}, "
+                f"grounding={getattr(self._grounding, 'name', 'stub')}, "
                 f"max={self._limits.max_width}x{self._limits.max_height}, "
                 f"bytes<={self._limits.max_image_bytes})"
             )
@@ -232,16 +232,17 @@ class VisionService:
         max_regions: int | None = None,
         max_chars: int | None = None,
     ) -> VisionDescription:
-        """OCR-free stub description of a stored capture."""
+        """Describe a stored capture (real local VLM when wired, else stub)."""
         repository = self._require_available()
         found = repository.get(capture_id)
         if found is None:
             raise VisionValidationError(f"unknown capture id: {capture_id!r}")
-        record, _image = found
+        record, image = found
         description = self._grounding.describe(
             record.id,
             record.width,
             record.height,
+            image=image,
             max_regions=max_regions,
             max_chars=max_chars,
         )
@@ -286,6 +287,7 @@ class VisionService:
             "detail": self.detail,
             "backend": self._capture.backend_name,
             "backend_available": self._capture.backend_available,
+            "grounding": getattr(self._grounding, "name", "stub"),
             "repository": repo_health,
         }
 

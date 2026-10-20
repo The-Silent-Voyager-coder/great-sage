@@ -27,7 +27,7 @@ def test_phase9_agent_started_carries_no_prompt_content() -> None:
         task_id=task.task_id,
         prompt=secret_prompt,
         conversation=(Message.user(secret_prompt),),
-        system_note="You are J.A.R.V.I.S.",
+        system_note="You are Great Sage",
     )
     status = AgentRunStatus(task_id=task.task_id)
     intelligence = FakeIntelligence([text_handler("done")], keep_last=False)

@@ -23,7 +23,7 @@ def write_config(tmp_path: Path) -> Path:
     path.write_text(
         f"""
 core:
-  name: "J.A.R.V.I.S. Voice Test"
+  name: "Great Sage Voice Test"
   data_dir: "{d}/data"
   cache_dir: "{d}/cache"
   logs_dir: "{d}/logs"
@@ -87,7 +87,7 @@ def test_start_without_config_unavailable() -> None:
 
 def test_listen_text_and_get(tmp_path: Path) -> None:
     service = make_service(tmp_path)
-    record = service.listen("hello jarvis", session_id="s1")
+    record = service.listen("hello sage", session_id="s1")
     assert record.text_chars == len(record.text)
     assert service.get_transcript(record.id) is not None
     assert len(service.list_transcripts()) == 1

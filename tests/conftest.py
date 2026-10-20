@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
+
+# Hermeticity: tests never capture a real screen or run model inference —
+# the vision backends default to real on Windows/Ollama-present machines,
+# so pin the stubs for the whole test session.
+# (setdefault: an explicit operator override still wins, e.g. local probing.)
+os.environ.setdefault("GREATSAGE_VISION_BACKEND", "stub")
+os.environ.setdefault("GREATSAGE_VISION_GROUNDING", "stub")
 
 
 @pytest.fixture
@@ -17,12 +25,12 @@ def valid_config_yaml(tmp_path: Path) -> Path:
     not touch it (shared-dev-DB incident: a stray migration against the
     shared tasks.db broke every runtime boot).
     """
-    path = tmp_path / "jarvis.yaml"
+    path = tmp_path / "sage.yaml"
     d = str(tmp_path).replace("\\", "/")
     path.write_text(
         f"""
 core:
-  name: "J.A.R.V.I.S. Test"
+  name: "Great Sage Test"
   data_dir: "{d}/data"
   cache_dir: "{d}/cache"
   logs_dir: "{d}/logs"

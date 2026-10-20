@@ -72,8 +72,9 @@ def make_briefing_handler(
         days = max(1, min(days, 30))
         try:
             cutoff = datetime.now(UTC) - timedelta(days=days)
+            # Only the episode count is reported: fetch a small bounded page.
             episodes = memory.retrieve(
-                memory_type=MemoryType.EPISODIC, created_after=cutoff, limit=None
+                memory_type=MemoryType.EPISODIC, created_after=cutoff, limit=10
             )
             ep_total = episodes.total
             tasks = task.list(limit=50)

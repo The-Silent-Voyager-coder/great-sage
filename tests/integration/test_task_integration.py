@@ -18,7 +18,7 @@ from greatsage.workspace.scanner import WorkspaceScanner
 
 def write_config(tmp_path: Path) -> object:
     d = str(tmp_path).replace("\\", "/")
-    p = tmp_path / "jarvis.yaml"
+    p = tmp_path / "sage.yaml"
     p.write_text(
         f"""
 core:

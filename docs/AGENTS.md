@@ -23,7 +23,7 @@ flow.**
 
 ## 2. State Machine
 
-Valid states: `pending`, `running`, `executing_tool`,
+Valid states: `created`, `running`, `executing_tool`,
 `waiting_for_approval`, `completed`, `failed`, `cancelled`, `timed_out`,
 `limit_reached`. All transitions are validated — invalid ones raise
 `AgentStateError`.
@@ -31,7 +31,7 @@ Valid states: `pending`, `running`, `executing_tool`,
 Transitions:
 
 ```text
-pending → running                       (run starts)
+created → running                       (run starts)
 running ⇄ executing_tool                (each step/tool call)
 executing_tool → waiting_for_approval   (ASK-level call, gate open)
 waiting_for_approval → executing_tool   (approved / denied → resolved)
@@ -49,10 +49,10 @@ ends `failed`; wall-clock exhaustion ends `timed_out`; limit exhaustion ends
    to `max_steps`/wall-clock.
 3. `AGENT_TOOL_CALL_REQUESTED` — strictly sequential: one tool call per
    step; **no parallel calls**. Loop-detection check runs before the call.
-4. `ToolService.execute` (always) → `AGENT_TOOL_CALL_COMPLETED` /
-   `AGENT_TOOL_CALL_FAILED`; the result (including approval denials, fed
-   back as failed `ToolCallResult`s) becomes the tool message for the next
-   step.
+4. `ToolService.execute` (always) → `AGENT_TOOL_CALL_COMPLETED` carrying
+   `success: true|false` (approval denials and tool failures arrive as failed
+   `ToolCallResult`s in the same event — there is no separate failed event);
+   the result becomes the tool message for the next step.
 5. `AGENT_STEP_COMPLETED`; repeat until the provider stops requesting tools
    → `AGENT_COMPLETED`.
 
@@ -72,8 +72,8 @@ Tool calls carry structured arguments only (`id`, `tool_id`, `arguments`,
 
 - The smaller applicable limit always wins (config vs. ceiling vs.
   run-time override). Enforced at run start, not loosely during the run.
-- `loop_detection_threshold`: exact-match tool-call signature bursts
-  (rolling window) end the run `limit_reached` with reason
+- `loop_detection_threshold`: consecutive identical tool-call signatures
+  (same tool + arguments) end the run `limit_reached` with reason
   `loop_detection`. Semantic loop detection is out of scope.
 
 ## 5. Approval
@@ -81,12 +81,19 @@ Tool calls carry structured arguments only (`id`, `tool_id`, `arguments`,
 - `AgentService` swaps in an `AgentApprovalProvider` (thread-safe) before a
   run and restores the previous provider afterwards.
 - An `ASK`-level call opens the gate and pauses the state machine in
-  `waiting_for_approval` until a human decides (`approve_all` /
-  `disapprove_all` / timeout / cancellation).
+  `waiting_for_approval` until a human decides (`approve` / `reject` /
+  timeout / cancellation).
 - Binary vocabulary only: `APPROVED` / `DENIED`. A denial is **never**
   auto-approved and never silently retried — it is fed back to the LLM as a
   failed tool result.
 - No approval provider + `ASK` decision → denied (fail-closed).
+- The CLI `--interactive` path uses `ApprovalBroker`
+  (`greatsage/agent/approval_broker.py`): the agent runs in a worker thread,
+  the CLI presents each pending request (tool, risk, reason, redacted argument
+  preview), and `y`/`yes` approves while anything else denies. EOF and the
+  bounded wait deny; Ctrl+C rejects outstanding requests and cancels the run.
+  The broker exposes `pending()`/`approve()`/`reject()` for a future UI without
+  changing the tool pipeline or granting it any new authority.
 
 ## 6. Cancellation and Timeouts
 
@@ -115,8 +122,10 @@ Tool calls carry structured arguments only (`id`, `tool_id`, `arguments`,
 ## 8. Memory in the Loop
 
 - Retrieval is explicit and bounded: at most `_MEMORY_REFERENCE_LIMIT = 5`
-  references (`memory_references` on `AgentResult`), scoped to the run's
-  `session_id` when one is given.
+  references (`memory_references` on `AgentContext`), scoped to the run's
+  `session_id` when one is given. The orchestrator injects them into the
+  system prompt, clearly delimited as untrusted context (data, never
+  instructions).
 - Retrieval failure degrades silently (the run continues without context).
 - The loop **never** auto-saves to long-term memory (Phase 3 rule).
 
@@ -137,8 +146,13 @@ AGENT_STEP_COMPLETED (final) → AGENT_COMPLETED
 ```text
 greatsage agent health [--config PATH] [--json]
 greatsage agent run --prompt TEXT [--session-id SID] [--provider NAME]
-                  [--model NAME] [--max-steps N] [--json] [--config PATH]
+                  [--model NAME] [--max-steps N] [--interactive]
+                  [--json] [--config PATH]
 ```
+
+`--interactive` prompts on stdin for every `ASK`-level tool call. Without it,
+the bounded agent approval window expires and denies — approval is never
+assumed.
 
 Exit codes: `0` completed/healthy; `1` failure (unavailable provider,
 non-completed state, runtime failure); `2` invalid prompt/configuration.

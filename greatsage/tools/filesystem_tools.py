@@ -207,11 +207,19 @@ class FilesystemReadTool(BaseTool):
         if not path.is_file():
             raise ToolExecutionError(f"path is not a file: {path}")
         requested = arguments.get("max_bytes")
-        limit = (
-            min(int(requested), context.max_output_bytes)
-            if requested is not None
-            else context.max_output_bytes
-        )
+        if requested is None:
+            limit = context.max_output_bytes
+        else:
+            try:
+                requested_int = int(requested)
+            except (TypeError, ValueError) as exc:
+                raise ToolExecutionError("max_bytes must be a positive integer") from exc
+            if requested_int <= 0:
+                raise ToolExecutionError("max_bytes must be a positive integer")
+            limit = min(requested_int, context.max_output_bytes)
+        # Never let a bad context value turn read() into "read everything":
+        # negative sizes are unbounded in Python's file API.
+        limit = max(1, limit)
         with path.open("rb") as handle:
             data = handle.read(limit + 1)
         if b"\x00" in data[:4096]:
@@ -336,7 +344,7 @@ class FilesystemWriteTool(BaseTool):
         try:
             if atomic:
                 with tempfile.NamedTemporaryFile(
-                    dir=str(parent), prefix=".jarvis-write-", delete=False
+                    dir=str(parent), prefix=".sage-write-", delete=False
                 ) as handle:
                     handle.write(encoded)
                     temp_path = Path(handle.name)

@@ -1,7 +1,7 @@
-"""Text renderers for the J.A.R.V.I.S. HUD (Phase 10).
+"""Text renderers for the Great Sage HUD (Phase 10).
 
 Plain-stdout tables matching the existing CLI style (``cli.py`` prints
-``J.A.R.V.I.S. <Subsystem>`` headers). JSON output is produced by
+``Great Sage <Subsystem>`` headers). JSON output is produced by
 ``HudSnapshot.to_dict`` directly; this module covers human-readable text.
 """
 

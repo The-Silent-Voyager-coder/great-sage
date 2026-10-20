@@ -20,7 +20,7 @@ def write_config(tmp_path: Path, **overrides: object) -> Path:
     ws = tmp_path / "workspace"
     ws.mkdir(exist_ok=True)
     # Write minimal config with workspace enabled
-    p = tmp_path / "jarvis.yaml"
+    p = tmp_path / "sage.yaml"
     p.write_text(
         f"""
 core:
@@ -151,8 +151,8 @@ def test_scan_entry_points_and_structure_depth_limited(tmp_path: Path) -> None:
 
 def test_scan_with_workspace_config_override(tmp_path: Path) -> None:
     ws = tmp_path / "workspace"
-    (ws / ".jarvis").mkdir(parents=True)
-    (ws / ".jarvis" / "workspace.yaml").write_text("name: custom\nproject_type: go\n", encoding="utf-8")
+    (ws / ".sage").mkdir(parents=True)
+    (ws / ".sage" / "workspace.yaml").write_text("name: custom\nproject_type: go\n", encoding="utf-8")
     (ws / "go.mod").write_text("module x\n", encoding="utf-8")
     cfg = load_config(write_config(tmp_path)).config
     scanner = WorkspaceScanner(

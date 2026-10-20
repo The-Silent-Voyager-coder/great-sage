@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,7 @@ from greatsage.cli import EXIT_FAILURE, EXIT_INVALID, EXIT_OK, main
 
 def write_cli_config(tmp_path: Path) -> Path:
     d = str(tmp_path).replace("\\", "/")
-    p = tmp_path / "jarvis.yaml"
+    p = tmp_path / "sage.yaml"
     p.write_text(
         f"""
 core:
@@ -113,7 +114,7 @@ def test_task_run_list_get(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
             {"sequence": 2, "description": "read", "tool_id": "filesystem.read", "arguments": {"path": str(ws / "README.md")}, "risk_estimate": "low", "acceptance_criteria": "ok"},
             {"sequence": 3, "description": "write", "tool_id": "filesystem.write", "arguments": {"path": str(ws / "cli_out.txt"), "content": "cli"}, "risk_estimate": "medium", "acceptance_criteria": "ok"},
         ],
-        "status": "draft",
+        "status": "ready",
         "created_at": "2026-01-01T00:00:00+00:00",
         "updated_at": "2026-01-01T00:00:00+00:00",
         "metadata": {},
@@ -146,6 +147,142 @@ def test_task_run_list_get(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
     assert code == EXIT_OK
 
 
+def test_task_run_requires_ready_plan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cfg = write_cli_config(tmp_path)
+    ws = tmp_path / "workspace"
+    import yaml
+
+    plan_data = {
+        "id": "plan_draft",
+        "goal": "draft task",
+        "workspace_root": str(ws),
+        "steps": [
+            {
+                "sequence": 1,
+                "description": "list",
+                "tool_id": "filesystem.list",
+                "arguments": {"path": str(ws)},
+                "risk_estimate": "low",
+                "acceptance_criteria": "ok",
+            }
+        ],
+        "status": "draft",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "updated_at": "2026-01-01T00:00:00+00:00",
+        "metadata": {},
+    }
+    plan_path = tmp_path / "draft.yaml"
+    plan_path.write_text(yaml.safe_dump(plan_data), encoding="utf-8")
+    code = main(["task", "run", str(plan_path), "--config", str(cfg)])
+    assert code == EXIT_INVALID
+    assert "approve it before execution" in capsys.readouterr().err
+
+
+def test_task_high_risk_requires_approve_and_runs_with_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cfg = write_cli_config(tmp_path)
+    ws = tmp_path / "workspace"
+    import yaml
+
+    plan_data = {
+        "id": "plan_high_risk",
+        "goal": "run a shell command",
+        "workspace_root": str(ws),
+        "steps": [
+            {
+                "sequence": 1,
+                "description": "run python",
+                "tool_id": "shell.execute",
+                "arguments": {
+                    "command": [sys.executable, "-c", "print('task-approved')"]
+                },
+                "risk_estimate": "high",
+                "acceptance_criteria": "command exits zero",
+            }
+        ],
+        "status": "ready",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "updated_at": "2026-01-01T00:00:00+00:00",
+        "metadata": {},
+    }
+    plan_path = tmp_path / "high-risk.yaml"
+    plan_path.write_text(yaml.safe_dump(plan_data), encoding="utf-8")
+
+    code = main(["task", "run", str(plan_path), "--config", str(cfg)])
+    assert code == EXIT_FAILURE
+    capsys.readouterr()
+
+    code = main(["task", "run", str(plan_path), "--approve", "--config", str(cfg)])
+    captured = capsys.readouterr()
+    assert code == EXIT_OK
+    assert "state    completed" in captured.out
+
+
+def test_task_resume_retries_failed_step(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cfg = write_cli_config(tmp_path)
+    ws = tmp_path / "workspace"
+    import yaml
+
+    plan_data = {
+        "id": "plan_resume",
+        "goal": "resume a failed read",
+        "workspace_root": str(ws),
+        "steps": [
+            {
+                "sequence": 1,
+                "description": "list",
+                "tool_id": "filesystem.list",
+                "arguments": {"path": str(ws)},
+                "risk_estimate": "low",
+                "acceptance_criteria": "ok",
+            },
+            {
+                "sequence": 2,
+                "description": "read missing",
+                "tool_id": "filesystem.read",
+                "arguments": {"path": str(ws / "later.txt")},
+                "risk_estimate": "low",
+                "acceptance_criteria": "ok",
+            },
+            {
+                "sequence": 3,
+                "description": "write",
+                "tool_id": "filesystem.write",
+                "arguments": {"path": str(ws / "resumed.txt"), "content": "resumed"},
+                "risk_estimate": "medium",
+                "acceptance_criteria": "ok",
+            },
+        ],
+        "status": "ready",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "updated_at": "2026-01-01T00:00:00+00:00",
+        "metadata": {},
+    }
+    plan_path = tmp_path / "resume.yaml"
+    plan_path.write_text(yaml.safe_dump(plan_data), encoding="utf-8")
+
+    code = main(["task", "run", str(plan_path), "--config", str(cfg)])
+    assert code == EXIT_FAILURE
+    capsys.readouterr()
+
+    code = main(["task", "list", "--config", str(cfg), "--json"])
+    assert code == EXIT_OK
+    tasks = json.loads(capsys.readouterr().out)
+    task_id = tasks[0]["id"]
+
+    (ws / "later.txt").write_text("now present", encoding="utf-8")
+    code = main(["task", "resume", task_id, "--config", str(cfg)])
+    captured = capsys.readouterr()
+    assert code == EXIT_OK
+    assert "state    completed" in captured.out
+    assert (ws / "resumed.txt").read_text(encoding="utf-8") == "resumed"
+
+
 def test_task_unknown_tool_denied(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     cfg = write_cli_config(tmp_path)
     ws = tmp_path / "workspace"
@@ -159,7 +296,7 @@ def test_task_unknown_tool_denied(tmp_path: Path, capsys: pytest.CaptureFixture[
         "steps": [
             {"sequence": 1, "description": "bad", "tool_id": "unknown.tool", "arguments": {}, "risk_estimate": "high", "acceptance_criteria": "ok"},
         ],
-        "status": "draft",
+        "status": "ready",
         "created_at": "2026-01-01T00:00:00+00:00",
         "updated_at": "2026-01-01T00:00:00+00:00",
         "metadata": {},
@@ -184,7 +321,7 @@ def test_task_protected_path_denied(tmp_path: Path, capsys: pytest.CaptureFixtur
         "steps": [
             {"sequence": 1, "description": "read", "tool_id": "filesystem.read", "arguments": {"path": str(ws / ".env")}, "risk_estimate": "low", "acceptance_criteria": "ok"},
         ],
-        "status": "draft",
+        "status": "ready",
         "created_at": "2026-01-01T00:00:00+00:00",
         "updated_at": "2026-01-01T00:00:00+00:00",
         "metadata": {},

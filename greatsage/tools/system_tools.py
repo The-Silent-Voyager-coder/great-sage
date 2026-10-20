@@ -1,6 +1,6 @@
 """System information tool (spec §23-24).
 
-system.info reports OS / CPU / RAM / storage / GPU / JARVIS version using the
+system.info reports OS / CPU / RAM / storage / GPU / Great Sage version using the
 read-only collectors from the Phase 2 benchmark. It never exposes the
 environment, user names, API keys, tokens, or any other credential.
 """
@@ -26,8 +26,10 @@ def _sage_version() -> str:
         from importlib.metadata import PackageNotFoundError, version
 
         return version("great-sage")
-    except PackageNotFoundError:  # pragma: no cover - editable installs expose it
-        return "unknown"
+    except PackageNotFoundError:  # pragma: no cover - non-installed checkout
+        from greatsage import __version__
+
+        return __version__
 
 
 def _storage_summary() -> list[dict[str, Any]]:
@@ -68,7 +70,7 @@ def _storage_summary() -> list[dict[str, Any]]:
 class SystemInfoTool(BaseTool):
     id = "system.info"
     name = "System information"
-    description = "OS, CPU, RAM, storage, GPU, and JARVIS version (read-only)."
+    description = "OS, CPU, RAM, storage, GPU, and Great Sage version (read-only)."
     version = "1.0.0"
     risk_level = ToolRisk.SAFE
     category = ToolCategory.SYSTEM

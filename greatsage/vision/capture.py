@@ -1,9 +1,18 @@
-"""Screen-capture abstraction (Phase 8).
+"""Screen-capture abstraction (Phase 8 + Eyes roadmap).
 
-Stdlib only, zero-cost, local-first. The active backend is a deterministic
-synthetic BMP generator: no display server, no screenshot utility, no paid
-API is ever required. Real OS capture backends may be added later behind
-this same ABC without changing callers.
+Stdlib only, zero-cost, local-first. Backends:
+
+- `gdi` — real primary-monitor capture on Windows via ctypes (the same
+  proven path as `gui.screenshot`), scaled (nearest-neighbor) to the
+  requested dimensions and written as a top-down BMP.
+- `stub` — deterministic synthetic BMP generator (no display server, no
+  screenshot utility, no paid API); the honest fallback when real capture
+  is unavailable or explicitly disabled.
+
+Backend selection: `build_capture_backend()` prefers `gdi` on Windows and
+falls back to `stub`; the `GREATSAGE_VISION_BACKEND` environment variable
+(`auto` | `stub` | `gdi`, default `auto`) overrides it — tests pin `stub`
+for hermetic runs.
 
 Output is 24-bit BMP (universally readable, no codec dependency) with
 bounded dimensions enforced before any byte is generated.
@@ -12,7 +21,9 @@ bounded dimensions enforced before any byte is generated.
 from __future__ import annotations
 
 import logging
+import os
 import struct
+import sys
 import time
 from abc import ABC, abstractmethod
 from typing import Any
@@ -108,6 +119,92 @@ class StubCaptureBackend(CaptureBackend):
 
     def capture(self, width: int, height: int) -> bytes:
         return encode_bmp(width, height, seed=self._seed)
+
+
+def _encode_scaled_bmp(
+    source_top_down: bytes,
+    source_width: int,
+    source_height: int,
+    width: int,
+    height: int,
+) -> bytes:
+    """Nearest-neighbor scale top-down BGR rows to a bottom-up BMP frame."""
+    source_stride = ((source_width * 3 + 3) // 4) * 4
+    target_stride = ((width * 3 + 3) // 4) * 4
+    padding = target_stride - width * 3
+    columns = [x * source_width // width * 3 for x in range(width)]
+    rows = bytearray()
+    for y in range(height - 1, -1, -1):  # bottom-up file order
+        source_row = y * source_height // height * source_stride
+        row = source_top_down
+        samples = [row[source_row + offset : source_row + offset + 3] for offset in columns]
+        rows.extend(b"".join(samples))
+        rows.extend(b"\x00" * padding)
+    image_size = len(rows)
+    file_size = BMP_HEADER_SIZE + image_size
+    header = struct.pack("<2sIHHI", b"BM", file_size, 0, 0, BMP_HEADER_SIZE)
+    dib = struct.pack(
+        "<IIIHHIIIIII", 40, width, height, 1, BMP_BITS_PER_PIXEL, 0, image_size,
+        2835, 2835, 0, 0,
+    )
+    return header + dib + bytes(rows)
+
+
+class GdiCaptureBackend(CaptureBackend):
+    """Real primary-monitor capture via ctypes GDI (Windows only).
+
+    Frames are captured at screen resolution and scaled (nearest-neighbor)
+    to the requested dimensions; the returned frame is always the exact
+    requested size, in the same BMP format as the stub backend.
+    """
+
+    name = "gdi"
+
+    def is_available(self) -> bool:
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+
+            return ctypes.windll.user32.GetSystemMetrics(0) > 0
+        except Exception:
+            return False
+
+    def capture(self, width: int, height: int) -> bytes:
+        from greatsage.tools.gui_tools import capture_primary_monitor_bmp
+
+        try:
+            source_width, source_height, bmp = capture_primary_monitor_bmp()
+        except OSError as exc:
+            raise VisionValidationError(f"screen capture failed: {exc}") from exc
+        if source_width <= 0 or source_height <= 0:
+            raise VisionValidationError("screen capture returned empty dimensions")
+        # Our BMP writer uses a 54-byte offset (file header + 40-byte DIB).
+        pixels = bmp[BMP_HEADER_SIZE:]
+        return _encode_scaled_bmp(pixels, source_width, source_height, width, height)
+
+
+def build_capture_backend() -> CaptureBackend:
+    """Select the capture backend: real GDI when possible, stub otherwise.
+
+    `GREATSAGE_VISION_BACKEND` (`auto` | `stub` | `gdi`) overrides the
+    automatic choice; tests pin `stub` so no test ever captures a real
+    screen.
+    """
+    preference = os.environ.get("GREATSAGE_VISION_BACKEND", "auto").strip().lower()
+    if preference == "stub":
+        return StubCaptureBackend()
+    if preference == "gdi":
+        return GdiCaptureBackend()
+    gdi = GdiCaptureBackend()
+    if gdi.is_available():
+        return gdi
+    return StubCaptureBackend()
+
+
+def build_capture_manager(limits: VisionLimits | None = None) -> CaptureManager:
+    """A CaptureManager wired with the selected backend (real when possible)."""
+    return CaptureManager(limits=limits, backend=build_capture_backend())
 
 
 class CaptureManager:

@@ -53,7 +53,16 @@ class HealthRegistry:
 
     def check(self, component: str) -> HealthReport:
         checker, detail = self._checkers[component]
-        status = checker()
+        try:
+            status = checker()
+        except Exception as exc:
+            # A single broken probe must not take down the whole health
+            # report; report that component as unhealthy and keep going.
+            return HealthReport(
+                component=component,
+                status=HealthStatus.UNHEALTHY,
+                detail=f"health check failed: {exc}",
+            )
         return HealthReport(component=component, status=status, detail=detail)
 
     def check_all(self) -> list[HealthReport]:

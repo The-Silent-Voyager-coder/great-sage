@@ -7,7 +7,7 @@ import os
 import time
 from typing import Any
 
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.events.models import TELEGRAM_RECEIVED, TELEGRAM_REPLIED, Event
 from greatsage.telegram.bridge import TelegramBridge
@@ -20,7 +20,7 @@ class TelegramService:
     """Owns the bot client + bridge; `listen` runs a bounded poll loop."""
 
     def __init__(self) -> None:
-        self._config: JarvisConfig | None = None
+        self._config: SageConfig | None = None
         self._client: TelegramClient | None = None
         self._bridge: TelegramBridge | None = None
         self._offset: int | None = None
@@ -28,7 +28,7 @@ class TelegramService:
         self._detail: str = "telegram service not started"
         self.publisher: Any = None
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         self._config = config
         self._client = None
         self._bridge = None

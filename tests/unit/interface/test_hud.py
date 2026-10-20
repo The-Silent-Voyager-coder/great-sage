@@ -1,4 +1,4 @@
-"""Unit tests for the Phase 10 HUD (jarvis/interface)."""
+"""Unit tests for the Phase 10 HUD (greatsage/interface)."""
 
 from __future__ import annotations
 

@@ -1,16 +1,18 @@
-"""OpenCode adapter tests against an in-process fake HTTP server.
+"""OpenCode v2 adapter tests against an in-process fake HTTP server.
 
-Covers /global/health (both `ok` and `healthy` shapes), /doc spec fetch,
-session creation, sync message prompt (`POST /session/:id/message` with
-`model{providerID,modelID}` + `variant`), response parsing, malformed /
-timeout / server-error paths, abort, capabilities, and the delegation
-surface (sessions, SSE events, permissions). No real OpenCode server,
+Covers /api/info health (version shape), /openapi.json spec fetch, session
+creation (``{data: {id}}`` envelope + v2 model refs), async prompt
+(``POST /api/session/:id/prompt`` with ``{text}``) followed by message
+timeline polling until ``idle``, malformed / timeout / server-error paths,
+interrupt, capabilities, and the delegation surface (poll-based events,
+permission reply decisions, diff envelope). No real OpenCode server,
 no internet.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 
 import pytest
 
@@ -20,18 +22,21 @@ from greatsage.intelligence.models import AIRequest, Message, ToolDefinition
 from greatsage.intelligence.opencode import OpenCodeProvider
 from greatsage.intelligence.provider import Capability, ProviderState
 
-OPENCODE_HEALTH = {"ok": True, "service": "opencode", "version": "0.1.0"}
-OPENCODE_SPEC = {"openapi": "3.1.0", "info": {"title": "opencode server"}}
-SESSION_ID = "sess-123"
-MESSAGE_RESPONSE = {
-    "info": {"modelID": "opencode-model", "stopReason": "stop"},
-    "parts": [
-        {"type": "step-start"},
-        {"type": "text", "text": "code answer"},
-        {"type": "step-finish"},
-    ],
-    "usage": {"prompt_tokens": 11, "completion_tokens": 3, "total_tokens": 14},
+OPENCODE_INFO = {"version": "2.0.29", "pid": 1234, "urls": [], "paths": {"tmp": "/tmp"}}
+OPENCODE_SPEC = {"openapi": "3.1.0", "info": {"title": "opencode HttpApi"}}
+SESSION_ID = "ses-123"
+ASSISTANT_MESSAGE = {
+    "id": "msg-a1",
+    "time": {"created": 1},
+    "type": "assistant",
+    "agent": "build",
+    "model": {"id": "opencode-model", "providerID": "opencode"},
+    "content": [{"type": "text", "text": "code answer"}],
+    "finish": "stop",
+    "tokens": {"input": 11, "output": 3},
 }
+IDLE_MESSAGE = {"id": "msg-idle", "time": {"created": 2}, "type": "idle", "outcome": "succeeded"}
+TIMELINE_DONE = {"data": [IDLE_MESSAGE, ASSISTANT_MESSAGE], "cursor": {}}
 
 
 def run(coro):
@@ -40,16 +45,24 @@ def run(coro):
 
 @pytest.fixture
 def opencode(fake_server) -> OpenCodeProvider:
-    fake_server.route("GET", "/global/health", 200, OPENCODE_HEALTH)
-    fake_server.route("GET", "/doc", 200, OPENCODE_SPEC)
+    fake_server.route("GET", "/api/info", 200, OPENCODE_INFO)
+    fake_server.route("GET", "/openapi.json", 200, OPENCODE_SPEC)
     provider = OpenCodeProvider(base_url=fake_server.url)
     return provider
+
+
+def _routes_for_generate(fake_server) -> None:
+    fake_server.route("POST", "/api/session", 200, {"data": {"id": SESSION_ID}})
+    fake_server.route("POST", f"/api/session/{SESSION_ID}/prompt", 200, {"data": {}})
+    fake_server.route("GET", f"/api/session/{SESSION_ID}/message", 200, TIMELINE_DONE)
+    fake_server.route("DELETE", f"/api/session/{SESSION_ID}", 204, "")
 
 
 def test_health_and_capabilities(opencode: OpenCodeProvider, fake_server) -> None:
     health = opencode.health()
     assert health.ok
     assert health.state is ProviderState.READY
+    assert "2.0.29" in health.detail
     caps = opencode.capabilities()
     assert caps.supports(Capability.REMOTE)
     assert caps.supports(Capability.CODE_EXECUTION)
@@ -65,61 +78,56 @@ def test_health_unavailable(fake_server) -> None:
 
 
 def test_health_malformed(fake_server) -> None:
-    fake_server.route("GET", "/global/health", 200, "not-json")
+    fake_server.route("GET", "/api/info", 200, "not-json")
     provider = OpenCodeProvider(base_url=fake_server.url)
     health = provider.health()
     assert health.ok is False
     assert health.state is ProviderState.DEGRADED
 
 
-def test_health_negative_ok_field(fake_server) -> None:
-    fake_server.route("GET", "/global/health", 200, {"ok": False, "reason": "busy"})
+def test_health_missing_version_is_degraded(fake_server) -> None:
+    fake_server.route("GET", "/api/info", 200, {"ok": True})
+    provider = OpenCodeProvider(base_url=fake_server.url)
+    health = provider.health()
+    assert health.ok is False
+    assert health.state is ProviderState.DEGRADED
+    # Internal state must agree with the reported health (no silent drift).
+    assert provider.state is ProviderState.DEGRADED
+
+
+def test_health_unauthorized_is_degraded(fake_server) -> None:
+    fake_server.route("GET", "/api/info", 401, {"error": "unauthorized"})
     provider = OpenCodeProvider(base_url=fake_server.url)
     health = provider.health()
     assert health.ok is False
     assert health.state is ProviderState.DEGRADED
 
 
-def test_health_healthy_shape(fake_server) -> None:
-    # Live servers (1.18+) answer {"healthy": true, ...} instead of {"ok": ...}.
-    fake_server.route("GET", "/global/health", 200, {"healthy": True, "version": "1.18.30"})
-    provider = OpenCodeProvider(base_url=fake_server.url)
-    health = provider.health()
-    assert health.ok
-    assert health.state is ProviderState.READY
-
-
-def test_generate_sessions_and_prompt(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session", 200, {"id": SESSION_ID})
-    fake_server.route(
-        "POST", f"/session/{SESSION_ID}/message", 200, MESSAGE_RESPONSE
-    )
-    fake_server.route("DELETE", f"/session/{SESSION_ID}", 200, {"ok": True})
+def test_generate_prompts_then_polls(opencode: OpenCodeProvider, fake_server) -> None:
+    _routes_for_generate(fake_server)
     opencode.init()
     response = opencode.generate(AIRequest(messages=[Message.user("write code")]))
     assert response.provider == "opencode"
     assert response.content == "code answer"
-    assert response.model == "opencode-model"
+    assert response.model == "opencode/opencode-model"
     assert response.finish_reason.value == "stop"
     assert response.usage is not None
+    assert response.usage.prompt_tokens == 11
+    assert response.usage.completion_tokens == 3
     assert response.usage.total_tokens == 14
     methods = [req["method"] for req in fake_server.requests]
     assert "POST" in methods
     assert "DELETE" in methods
-    prompt_request = next(
-        r for r in fake_server.requests if r["path"].endswith("/message")
-    )
-    assert '"type": "text"' in prompt_request["body"]
-    assert "write code" in prompt_request["body"]
-    assert '"model"' not in prompt_request["body"]  # server default when unset
+    prompt_request = next(r for r in fake_server.requests if r["path"].endswith("/prompt"))
+    assert '"text": "write code"' in prompt_request["body"]
+    assert '"model"' not in prompt_request["body"]  # model goes to session create
+    assert '"system"' not in prompt_request["body"]  # v2 prompt takes text only
 
 
-def test_generate_system_prompt(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session", 200, {"id": SESSION_ID})
-    fake_server.route(
-        "POST", f"/session/{SESSION_ID}/message", 200, MESSAGE_RESPONSE
-    )
-    fake_server.route("DELETE", f"/session/{SESSION_ID}", 200, {"ok": True})
+def test_generate_system_prompt_folded_into_text(
+    opencode: OpenCodeProvider, fake_server
+) -> None:
+    _routes_for_generate(fake_server)
     opencode.init()
     opencode.generate(
         AIRequest(
@@ -128,61 +136,122 @@ def test_generate_system_prompt(opencode: OpenCodeProvider, fake_server) -> None
             model="opencode/muse-spark-1.3-contributor-free#xhigh",
         )
     )
-    prompt_request = next(r for r in fake_server.requests if r["path"].endswith("/message"))
-    assert '"system": "you are a code assistant"' in prompt_request["body"]
-    assert '"providerID": "opencode"' in prompt_request["body"]
-    assert '"modelID": "muse-spark-1.3-contributor-free"' in prompt_request["body"]
-    assert '"variant": "xhigh"' in prompt_request["body"]
+    prompt_request = next(r for r in fake_server.requests if r["path"].endswith("/prompt"))
+    assert "system: you are a code assistant" in prompt_request["body"]
+    create_request = next(
+        r for r in fake_server.requests if r["path"].endswith("/api/session")
+    )
+    assert '"providerID": "opencode"' in create_request["body"]
+    assert '"id": "muse-spark-1.3-contributor-free"' in create_request["body"]
+    assert '"variant": "xhigh"' in create_request["body"]
 
 
 def test_generate_usage_absent_is_none(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session", 200, {"id": SESSION_ID})
+    assistant = {
+        "id": "m",
+        "time": {"created": 1},
+        "type": "assistant",
+        "content": [{"type": "text", "text": "no usage here"}],
+    }
+    fake_server.route("POST", "/api/session", 200, {"data": {"id": SESSION_ID}})
+    fake_server.route("POST", f"/api/session/{SESSION_ID}/prompt", 200, {"data": {}})
     fake_server.route(
-        "POST",
-        f"/session/{SESSION_ID}/message",
-        200,
-        {"info": {}, "parts": [{"type": "text", "text": "no usage here"}]},
+        "GET", f"/api/session/{SESSION_ID}/message", 200, {"data": [IDLE_MESSAGE, assistant]}
     )
-    fake_server.route("DELETE", f"/session/{SESSION_ID}", 200, {"ok": True})
+    fake_server.route("DELETE", f"/api/session/{SESSION_ID}", 204, "")
     opencode.init()
     response = opencode.generate(AIRequest(messages=[Message.user("hi")]))
     assert response.usage is None
     assert response.content == "no usage here"
 
 
-def test_generate_ignores_non_text_parts(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session", 200, {"id": SESSION_ID})
+def test_generate_partial_usage_never_fabricates_total(
+    opencode: OpenCodeProvider, fake_server
+) -> None:
+    # Only the input count is reported: the total must stay None, never a
+    # fabricated sum (TokenUsage contract).
+    assistant = {
+        "id": "m",
+        "time": {"created": 1},
+        "type": "assistant",
+        "content": [{"type": "text", "text": "partial"}],
+        "tokens": {"input": 7},
+    }
+    fake_server.route("POST", "/api/session", 200, {"data": {"id": SESSION_ID}})
+    fake_server.route("POST", f"/api/session/{SESSION_ID}/prompt", 200, {"data": {}})
     fake_server.route(
-        "POST",
-        f"/session/{SESSION_ID}/message",
-        200,
-        {
-            "info": {"modelID": "m"},
-            "parts": [
-                {"type": "step-start"},
-                {"type": "reasoning", "text": ""},
-                {"type": "text", "text": "final"},
-                {"type": "step-finish"},
-            ],
-        },
+        "GET", f"/api/session/{SESSION_ID}/message", 200, {"data": [IDLE_MESSAGE, assistant]}
     )
-    fake_server.route("DELETE", f"/session/{SESSION_ID}", 200, {"ok": True})
+    fake_server.route("DELETE", f"/api/session/{SESSION_ID}", 204, "")
+    opencode.init()
+    response = opencode.generate(AIRequest(messages=[Message.user("hi")]))
+    assert response.usage is not None
+    assert response.usage.prompt_tokens == 7
+    assert response.usage.completion_tokens is None
+    assert response.usage.total_tokens is None
+
+
+def test_generate_skips_reasoning_blobs(opencode: OpenCodeProvider, fake_server) -> None:
+    assistant = {
+        "id": "m",
+        "time": {"created": 1},
+        "type": "assistant",
+        "content": [
+            {"type": "reasoning", "text": "ENCRYPTED-BLOB"},
+            {"type": "text", "text": "final"},
+        ],
+    }
+    fake_server.route("POST", "/api/session", 200, {"data": {"id": SESSION_ID}})
+    fake_server.route("POST", f"/api/session/{SESSION_ID}/prompt", 200, {"data": {}})
+    fake_server.route(
+        "GET", f"/api/session/{SESSION_ID}/message", 200, {"data": [IDLE_MESSAGE, assistant]}
+    )
+    fake_server.route("DELETE", f"/api/session/{SESSION_ID}", 204, "")
     opencode.init()
     response = opencode.generate(AIRequest(messages=[Message.user("hi")]))
     assert response.content == "final"
 
 
-def test_default_model_fallback(fake_server) -> None:
-    fake_server.route("GET", "/global/health", 200, OPENCODE_HEALTH)
-    fake_server.route("GET", "/doc", 200, OPENCODE_SPEC)
-    fake_server.route("POST", "/session", 200, {"id": SESSION_ID})
+def test_generate_executor_error(opencode: OpenCodeProvider, fake_server) -> None:
+    assistant = {
+        "id": "m",
+        "time": {"created": 1},
+        "type": "assistant",
+        "content": [],
+        "error": {"message": "model blew up"},
+    }
+    fake_server.route("POST", "/api/session", 200, {"data": {"id": SESSION_ID}})
+    fake_server.route("POST", f"/api/session/{SESSION_ID}/prompt", 200, {"data": {}})
     fake_server.route(
-        "POST",
-        f"/session/{SESSION_ID}/message",
-        200,
-        {"info": {"modelID": "m"}, "parts": [{"type": "text", "text": "hi"}]},
+        "GET", f"/api/session/{SESSION_ID}/message", 200, {"data": [IDLE_MESSAGE, assistant]}
     )
-    fake_server.route("DELETE", f"/session/{SESSION_ID}", 200, {"ok": True})
+    fake_server.route("DELETE", f"/api/session/{SESSION_ID}", 204, "")
+    opencode.init()
+    with pytest.raises(ProviderError, match="model blew up"):
+        opencode.generate(AIRequest(messages=[Message.user("hi")]))
+
+
+def test_generate_failed_idle_outcome_fails_fast(
+    opencode: OpenCodeProvider, fake_server
+) -> None:
+    # A non-succeeded idle outcome means no further assistant message will
+    # arrive: fail fast with the session outcome instead of polling to timeout.
+    aborted = {"id": "i2", "time": {"created": 2}, "type": "idle", "outcome": "aborted"}
+    fake_server.route("POST", "/api/session", 200, {"data": {"id": SESSION_ID}})
+    fake_server.route("POST", f"/api/session/{SESSION_ID}/prompt", 200, {"data": {}})
+    fake_server.route(
+        "GET", f"/api/session/{SESSION_ID}/message", 200, {"data": [aborted]}
+    )
+    fake_server.route("DELETE", f"/api/session/{SESSION_ID}", 204, "")
+    opencode.init()
+    with pytest.raises(ProviderError, match="session ended: aborted"):
+        opencode.generate(AIRequest(messages=[Message.user("hi")]))
+
+
+def test_default_model_fallback(fake_server) -> None:
+    fake_server.route("GET", "/api/info", 200, OPENCODE_INFO)
+    fake_server.route("GET", "/openapi.json", 200, OPENCODE_SPEC)
+    _routes_for_generate(fake_server)
     provider = OpenCodeProvider(
         base_url=fake_server.url,
         model="opencode/muse-spark-1.3-contributor-free#medium",
@@ -190,32 +259,34 @@ def test_default_model_fallback(fake_server) -> None:
     provider.init()
     response = provider.generate(AIRequest(messages=[Message.user("hi")]))
     assert response.model == "opencode/muse-spark-1.3-contributor-free#medium"
-    prompt_request = next(r for r in fake_server.requests if r["path"].endswith("/message"))
-    assert '"modelID": "muse-spark-1.3-contributor-free"' in prompt_request["body"]
-    assert '"variant": "medium"' in prompt_request["body"]
+    create_request = next(
+        r for r in fake_server.requests if r["path"].endswith("/api/session")
+    )
+    assert '"id": "muse-spark-1.3-contributor-free"' in create_request["body"]
+    assert '"variant": "medium"' in create_request["body"]
 
 
 def test_split_model_shapes() -> None:
     from greatsage.intelligence.opencode import OpenCodeProvider as P
 
-    assert P._split_model(None) == (None, None)
-    assert P._split_model("") == (None, None)
+    assert P._split_model(None) is None
+    assert P._split_model("") is None
     assert P._split_model("opencode/m#xhigh") == (
-        {"providerID": "opencode", "modelID": "m"}, "xhigh",
+        {"providerID": "opencode", "id": "m", "variant": "xhigh"}
     )
-    assert P._split_model("opencode/m") == ({"providerID": "opencode", "modelID": "m"}, None)
-    assert P._split_model("m") == ({"providerID": "opencode", "modelID": "m"}, None)
+    assert P._split_model("opencode/m") == ({"providerID": "opencode", "id": "m"})
+    assert P._split_model("m") == ({"providerID": "opencode", "id": "m"})
 
 
 def test_generate_session_creation_failure(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session", 500, {"error": "boom"})
+    fake_server.route("POST", "/api/session", 500, {"error": "boom"})
     opencode.init()
     with pytest.raises(ProviderError, match="session"):
         opencode.generate(AIRequest(messages=[Message.user("hi")]))
 
 
 def test_generate_missing_session_id(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session", 200, {})
+    fake_server.route("POST", "/api/session", 200, {"data": {}})
     opencode.init()
     with pytest.raises(ProviderError, match="session id"):
         opencode.generate(AIRequest(messages=[Message.user("hi")]))
@@ -228,19 +299,17 @@ def test_generate_unreachable(fake_server) -> None:
         provider.generate(AIRequest(messages=[Message.user("hi")]))
 
 
-def test_generate_server_error(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session", 200, {"id": SESSION_ID})
-    fake_server.route("POST", f"/session/{SESSION_ID}/message", 500, {"error": "x"})
-    fake_server.route("DELETE", f"/session/{SESSION_ID}", 200, {"ok": True})
+def test_generate_prompt_server_error(opencode: OpenCodeProvider, fake_server) -> None:
+    fake_server.route("POST", "/api/session", 200, {"data": {"id": SESSION_ID}})
+    fake_server.route("POST", f"/api/session/{SESSION_ID}/prompt", 500, {"error": "x"})
+    fake_server.route("DELETE", f"/api/session/{SESSION_ID}", 204, "")
     opencode.init()
     with pytest.raises(ProviderError, match="HTTP 500"):
         opencode.generate(AIRequest(messages=[Message.user("hi")]))
 
 
 def test_tools_unsupported_explicit_error(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session", 200, {"id": SESSION_ID})
-    fake_server.route("POST", f"/session/{SESSION_ID}/message", 200, MESSAGE_RESPONSE)
-    fake_server.route("DELETE", f"/session/{SESSION_ID}", 200, {"ok": True})
+    _routes_for_generate(fake_server)
     opencode.init()
     request = AIRequest(
         messages=[Message.user("hi")],
@@ -266,20 +335,68 @@ def test_cancel_noop(opencode: OpenCodeProvider) -> None:
     opencode.cancel("req-1")  # must not raise
 
 
-def test_api_key_env_used(fake_server, monkeypatch) -> None:
-    fake_server.route("GET", "/global/health", 200, OPENCODE_HEALTH)
+def test_basic_auth_from_env(fake_server, monkeypatch) -> None:
+    fake_server.route("GET", "/api/info", 200, OPENCODE_INFO)
     monkeypatch.setenv("GREATSAGE_OPENCODE_TOKEN", "sk-test")
     provider = OpenCodeProvider(
         base_url=fake_server.url, api_key_env="GREATSAGE_OPENCODE_TOKEN"
     )
     provider.init()
-    provider._auth_headers()  # force load
-    assert provider._api_key == "sk-test"
+    headers = provider._auth_headers()
+    assert headers["Authorization"].startswith("Basic ")
+    decoded = base64.b64decode(headers["Authorization"][len("Basic "):]).decode()
+    assert decoded == "opencode:sk-test"
+
+
+def test_basic_auth_username_override(fake_server, monkeypatch) -> None:
+    fake_server.route("GET", "/api/info", 200, OPENCODE_INFO)
+    monkeypatch.setenv("GREATSAGE_OPENCODE_TOKEN", "sk-test")
+    monkeypatch.setenv("GREATSAGE_OPENCODE_USER", "sage")
+    provider = OpenCodeProvider(
+        base_url=fake_server.url,
+        api_key_env="GREATSAGE_OPENCODE_TOKEN",
+        username_env="GREATSAGE_OPENCODE_USER",
+    )
+    provider.init()
+    headers = provider._auth_headers()
+    decoded = base64.b64decode(headers["Authorization"][len("Basic "):]).decode()
+    assert decoded == "sage:sk-test"
+
+
+def test_no_auth_headers_without_env(opencode: OpenCodeProvider) -> None:
+    assert opencode._auth_headers() == {}
+
+
+def test_spec_fetch_retries_before_giving_up(fake_server) -> None:
+    # A failed /openapi.json fetch must not be written off forever: the
+    # provider retries a bounded number of times across health probes.
+    fake_server.route("GET", "/api/info", 200, OPENCODE_INFO)
+    fake_server.route("GET", "/openapi.json", 500, {"error": "transient"})
+    provider = OpenCodeProvider(base_url=fake_server.url)
+    provider.health()
+    provider.health()
+    assert provider._spec_attempts == 2  # still retrying
+    fake_server.route("GET", "/openapi.json", 200, OPENCODE_SPEC)
+    provider.health()
+    assert provider._spec_fetched  # recovered on a later probe
+    attempts = provider._spec_attempts
+    provider.health()
+    assert provider._spec_attempts == attempts  # fetched once, then cached
+
+
+def test_spec_fetch_gives_up_after_cap(fake_server) -> None:
+    fake_server.route("GET", "/api/info", 200, OPENCODE_INFO)
+    fake_server.route("GET", "/openapi.json", 500, {"error": "down"})
+    provider = OpenCodeProvider(base_url=fake_server.url)
+    for _ in range(6):
+        provider.health()
+    assert not provider._spec_fetched
+    assert provider._spec_attempts == 3  # bounded, never hammering
 
 
 def test_timeout_hits(fake_server) -> None:
-    fake_server.route("GET", "/global/health", 200, OPENCODE_HEALTH)
-    fake_server.slow("/global/health")
+    fake_server.route("GET", "/api/info", 200, OPENCODE_INFO)
+    fake_server.slow("/api/info")
     provider = OpenCodeProvider(base_url=fake_server.url, timeout_seconds=0.5)
     health = provider.health()
     assert health.ok is False
@@ -295,177 +412,224 @@ def test_capabilities_include_delegation(opencode: OpenCodeProvider) -> None:
 
 
 def test_create_session(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session", 200, {"id": "sess-delegated"})
+    fake_server.route("POST", "/api/session", 200, {"data": {"id": "sess-delegated"}})
     session_id = opencode.create_session()
     assert session_id == "sess-delegated"
 
 
 def test_send_delegation_prompt_ok(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session/sess-1/prompt_async", 204, "")
+    fake_server.route("POST", "/api/session/sess-1/prompt", 200, {"data": {}})
     opencode.init()
     opencode.send_delegation_prompt("sess-1", "do the work", "/tmp/project")
-    prompt_request = next(r for r in fake_server.requests if "prompt_async" in r["path"])
-    assert '"type": "text"' in prompt_request["body"]
+    prompt_request = next(r for r in fake_server.requests if r["path"].endswith("/prompt"))
     assert '"text": "do the work"' in prompt_request["body"]
+    assert "working_directory" not in prompt_request["body"]
 
 
 def test_send_delegation_prompt_omits_cwd_when_absent(
     opencode: OpenCodeProvider, fake_server
 ) -> None:
-    # The 1.18 message API carries no directory field: scoping stays a
-    # JARVIS-side permission decision, never a wire field.
-    fake_server.route("POST", "/session/sess-1/prompt_async", 204, "")
+    # The v2 prompt API carries no directory field: scoping stays a
+    # Great Sage-side permission decision, never a wire field.
+    fake_server.route("POST", "/api/session/sess-1/prompt", 200, {"data": {}})
     opencode.init()
     opencode.send_delegation_prompt("sess-1", "hello")
-    prompt_request = next(r for r in fake_server.requests if "prompt_async" in r["path"])
+    prompt_request = next(r for r in fake_server.requests if r["path"].endswith("/prompt"))
     assert "working_directory" not in prompt_request["body"]
 
 
 def test_send_delegation_prompt_failure(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session/sess-1/prompt_async", 500, {"error": "boom"})
+    fake_server.route("POST", "/api/session/sess-1/prompt", 500, {"error": "boom"})
     opencode.init()
     with pytest.raises(ProviderError, match="prompt"):
         opencode.send_delegation_prompt("sess-1", "do it")
 
 
-SSE_EVENTS = "\n".join(
-    [
-        'event: session.run.started',
-        'data: {"text": "first thought"}',
-        "",
-        'event: session.request.permission',
-        'data: {"permissionID": "perm-7", "key": {"permissions": {"action": '
-        '"write", "path": "/tmp/a.txt"}}, "description": "allow write"}',
-        "",
-        'event: session.run.completed',
-        'data: {"status": "completed", "summary": "all done"}',
-        "",
-    ]
-)
+def _poll_routes(fake_server, messages, permissions=None) -> None:
+    fake_server.route(
+        "GET", "/api/session/sess-7/message", 200, {"data": messages, "cursor": {}}
+    )
+    fake_server.route(
+        "GET", "/api/session/sess-7/permission", 200, {"data": permissions or []}
+    )
 
 
 def test_iter_session_events_translates_kinds(opencode, fake_server) -> None:
-    fake_server.route("GET", "/session/sess-7/event", 200, SSE_EVENTS)
+    _poll_routes(
+        fake_server,
+        [
+            {"id": "u1", "type": "user", "text": "do it"},
+            {
+                "id": "a1",
+                "type": "assistant",
+                "content": [{"type": "text", "text": "first thought"}],
+            },
+            {"id": "i1", "type": "idle", "outcome": "succeeded", "summary": "all done"},
+        ],
+        [
+            {
+                "id": "perm-7",
+                "action": "write",
+                "path": "/tmp/a.txt",
+                "description": "allow write",
+            }
+        ],
+    )
     events = list(opencode.iter_session_events("sess-7"))
     assert [e.kind for e in events] == [
         DelegationEventKind.PROGRESS,
-        DelegationEventKind.PERMISSION_REQUESTED,
         DelegationEventKind.COMPLETED,
+        DelegationEventKind.PERMISSION_REQUESTED,
     ]
     progress = events[0]
     assert progress.message == "first thought"
-    permission = events[1]
+    permission = events[2]
     assert permission.metadata["permission_id"] == "perm-7"
     assert permission.metadata["action"] == "write"
     assert permission.metadata["path"] == "/tmp/a.txt"
     assert permission.message == "allow write"
-    completed = events[2]
+    completed = events[1]
     assert completed.message == "all done"
 
 
-def test_iter_session_events_error_and_cancel(opencode, fake_server) -> None:
-    raw = "\n".join(
-        [
-            'event: session.error',
-            'data: {"error": "invalid token"}',
-            "",
-            'event: session.cancelled',
-            'data: {"cancelled": true}',
-            "",
-        ]
-    )
-    fake_server.route("GET", "/session/sess-8/event", 200, raw)
-    events = list(opencode.iter_session_events("sess-8"))
-    assert [e.kind for e in events] == [
-        DelegationEventKind.FAILED,
-        DelegationEventKind.CANCELLED,
-    ]
-    assert events[0].message == "invalid token"
-
-
-def test_iter_session_events_malformed_skipped(opencode, fake_server) -> None:
-    raw = "\n".join(
-        [
-            'event: session.thing',
-            'data: not-json',
-            "",
-            'event: session.thing',
-            'data: [1, 2, 3]',
-            "",
-        ]
-    )
-    fake_server.route("GET", "/session/sess-9/event", 200, raw)
-    events = list(opencode.iter_session_events("sess-9"))
+def test_iter_session_events_quiet_sweep_heartbeats(opencode, fake_server) -> None:
+    # A sweep with nothing new must heartbeat (NOTE), never go quiet:
+    # quiet is normal mid-run; only transport failures end the stream.
+    _poll_routes(fake_server, [{"id": "u1", "type": "user", "text": "hi"}])
+    events = list(opencode.iter_session_events("sess-7"))
     assert len(events) == 1
     assert events[0].kind is DelegationEventKind.NOTE
 
 
-def test_iter_session_events_non_dict_data_is_note(opencode, fake_server) -> None:
-    raw = "\n".join(
-        [
-            'event: session.thing',
-            'data: "just a string"',
-            "",
-        ]
+def test_iter_session_events_dedupes_seen(opencode, fake_server) -> None:
+    _poll_routes(fake_server, [IDLE_MESSAGE, ASSISTANT_MESSAGE])
+    first = list(opencode.iter_session_events("sess-7"))
+    assert len(first) == 2
+    second = list(opencode.iter_session_events("sess-7"))
+    assert len(second) == 1
+    assert second[0].kind is DelegationEventKind.NOTE
+
+
+def test_iter_session_events_failed_outcome(opencode, fake_server) -> None:
+    _poll_routes(
+        fake_server, [{"id": "i9", "type": "idle", "outcome": "aborted"}]
     )
-    fake_server.route("GET", "/session/sess-10/event", 200, raw)
-    events = list(opencode.iter_session_events("sess-10"))
+    events = list(opencode.iter_session_events("sess-7"))
+    assert [e.kind for e in events] == [DelegationEventKind.FAILED]
+    assert "aborted" in (events[0].message or "")
+
+
+def test_iter_session_events_assistant_error(opencode, fake_server) -> None:
+    _poll_routes(
+        fake_server,
+        [
+            {
+                "id": "a9",
+                "type": "assistant",
+                "content": [],
+                "error": {"message": "invalid token"},
+            }
+        ],
+    )
+    events = list(opencode.iter_session_events("sess-7"))
+    assert [e.kind for e in events] == [DelegationEventKind.FAILED]
+    assert events[0].message == "invalid token"
+
+
+def test_iter_session_events_unknown_type_is_note(opencode, fake_server) -> None:
+    _poll_routes(fake_server, [{"id": "c1", "type": "compaction"}])
+    events = list(opencode.iter_session_events("sess-7"))
     assert len(events) == 1
     assert events[0].kind is DelegationEventKind.NOTE
 
 
 def test_respond_permission(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session/sess-1/permissions/perm-7", 200, {"ok": True})
-    fake_server.route("POST", "/session/sess-1/permissions/perm-8", 200, {"ok": True})
+    fake_server.route("POST", "/api/session/sess-1/permission/perm-7/reply", 204, "")
+    fake_server.route("POST", "/api/session/sess-1/permission/perm-8/reply", 204, "")
     opencode.init()
     opencode.respond_permission("sess-1", "perm-7", True)
     opencode.respond_permission("sess-1", "perm-8", False, remember=True)
-    bodies = [r["body"] for r in fake_server.requests if "permissions" in r["path"]]
-    assert '"response": true' in bodies[0]
-    assert '"response": false' in bodies[1]
-    assert '"remember": true' in bodies[1]
+    bodies = [r["body"] for r in fake_server.requests if r["path"].endswith("/reply")]
+    assert '"decision": "once"' in bodies[0]
+    assert '"decision": "reject"' in bodies[1]
 
 
-def test_abort_session_never_raises(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("POST", "/session/sess-1/abort", 200, {"ok": True})
-    fake_server.route("POST", "/session/missing/abort", 404, {"error": "nope"})
+def test_respond_permission_remember_maps_to_always(
+    opencode: OpenCodeProvider, fake_server
+) -> None:
+    fake_server.route("POST", "/api/session/sess-1/permission/perm-9/reply", 204, "")
+    opencode.init()
+    opencode.respond_permission("sess-1", "perm-9", True, remember=True)
+    bodies = [r["body"] for r in fake_server.requests if r["path"].endswith("/reply")]
+    assert '"decision": "always"' in bodies[0]
+
+
+def test_interrupt_session_never_raises(opencode: OpenCodeProvider, fake_server) -> None:
+    fake_server.route("POST", "/api/session/sess-1/interrupt", 200, {"ok": True})
+    fake_server.route("POST", "/api/session/missing/interrupt", 404, {"error": "nope"})
     opencode.init()
     opencode.abort_session("sess-1")
     opencode.abort_session("missing")  # must not raise
 
 
 def test_get_session_diff(opencode: OpenCodeProvider, fake_server) -> None:
-    diff = {"files": [{"path": "/tmp/a.txt", "added": 1}]}
-    fake_server.route("GET", "/session/sess-1/diff", 200, diff)
-    assert opencode.get_session_diff("sess-1") == diff
+    fake_server.route(
+        "GET",
+        "/api/session/sess-1/diff",
+        200,
+        {"data": [{"file": "/tmp/a.txt", "status": "modified"}]},
+    )
+    assert opencode.get_session_diff("sess-1") == {
+        "files": [{"file": "/tmp/a.txt", "status": "modified"}]
+    }
+
+
+def test_get_session_diff_scopes_to_prompt_turn(
+    opencode: OpenCodeProvider, fake_server
+) -> None:
+    fake_server.route(
+        "POST", "/api/session/sess-1/prompt", 200, {"data": {"id": "msg-u1"}}
+    )
+    fake_server.route(
+        "GET",
+        "/api/session/sess-1/diff?from=msg-u1",
+        200,
+        {"data": [{"file": "/tmp/a.txt", "status": "added"}]},
+    )
+    opencode.init()
+    opencode.send_delegation_prompt("sess-1", "do it")
+    diff = opencode.get_session_diff("sess-1")
+    assert diff is not None
+    assert diff["files"] == [{"file": "/tmp/a.txt", "status": "added"}]
 
 
 def test_get_session_diff_unavailable_is_none(opencode, fake_server) -> None:
-    fake_server.route("GET", "/session/sess-1/diff", 500, {"error": "x"})
+    fake_server.route("GET", "/api/session/sess-1/diff", 500, {"error": "x"})
     assert opencode.get_session_diff("sess-1") is None
 
 
 def test_dispose_session_deletes(opencode: OpenCodeProvider, fake_server) -> None:
-    fake_server.route("DELETE", "/session/sess-1", 200, {"ok": True})
+    fake_server.route("DELETE", "/api/session/sess-1", 204, "")
     opencode.init()
     opencode.dispose_session("sess-1")
     methods = [r["method"] for r in fake_server.requests]
     assert "DELETE" in methods
 
 
-def test_iter_session_events_http_error_wrapped(opencode: OpenCodeProvider, fake_server) -> None:
-    # A non-2xx on the event endpoint must surface as a ProviderError so the
+def test_iter_session_events_http_error_wrapped(opencode, fake_server) -> None:
+    # A non-2xx on the poll endpoints must surface as a ProviderError so the
     # DelegationManager can treat it as connection loss — never an unhandled
     # HTTPErrorStatus escaping to the caller.
-    fake_server.route("GET", "/session/sess-11/event", 500, {"error": "boom"})
+    fake_server.route("GET", "/api/session/sess-11/message", 500, {"error": "boom"})
+    fake_server.route("GET", "/api/session/sess-11/permission", 200, {"data": []})
     opencode.init()
-    with pytest.raises(ProviderError, match="event stream"):
+    with pytest.raises(ProviderError, match="event poll"):
         list(opencode.iter_session_events("sess-11"))
 
 
-def test_iter_session_events_unreachable_wrapped(opencode: OpenCodeProvider, fake_server) -> None:
-    # A connection failure on the event endpoint maps to ProviderUnavailableError.
+def test_iter_session_events_unreachable_wrapped(opencode, fake_server) -> None:
+    # A connection failure on the poll endpoints maps to ProviderUnavailableError.
     provider = OpenCodeProvider(base_url="http://127.0.0.1:1", timeout_seconds=0.5)
     provider.init()
-    with pytest.raises(ProviderUnavailableError, match="event stream"):
+    with pytest.raises(ProviderUnavailableError, match="event poll"):
         list(provider.iter_session_events("sess-12"))

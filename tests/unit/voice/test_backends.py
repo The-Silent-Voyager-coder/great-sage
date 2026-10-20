@@ -12,18 +12,18 @@ from greatsage.voice.wakeword import KeywordWakeDetector
 
 
 def test_wake_detects_keyword() -> None:
-    detector = KeywordWakeDetector("jarvis")
-    assert detector.check("hey Jarvis, help me").detected
+    detector = KeywordWakeDetector("sage")
+    assert detector.check("hey Sage, help me").detected
     assert not detector.check("hello there").detected
 
 
 def test_wake_rejects_empty_and_oversize() -> None:
-    detector = KeywordWakeDetector("jarvis")
+    detector = KeywordWakeDetector("sage")
     with pytest.raises(VoiceValidationError):
         detector.check("   ")
-    tight = KeywordWakeDetector("jarvis", limits=VoiceLimits(max_wake_text_chars=5))
+    tight = KeywordWakeDetector("sage", limits=VoiceLimits(max_wake_text_chars=5))
     with pytest.raises(VoiceValidationError):
-        tight.check("hey jarvis hello world")
+        tight.check("hey sage hello world")
 
 
 def test_wake_rejects_empty_keyword() -> None:
@@ -63,7 +63,7 @@ def test_offline_backends_unavailable() -> None:
 
 
 def test_tts_produces_wav_and_bounds() -> None:
-    audio, record = TTSManager().speak("hello jarvis")
+    audio, record = TTSManager().speak("hello sage")
     assert is_wav_bytes(audio)
     assert record.format == "wav"
     assert record.size_bytes == len(audio)

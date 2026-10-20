@@ -26,4 +26,10 @@ MAX_SESSION_COUNT_CEILING = 10
 MAX_DELEGATION_DEPTH_DEFAULT = 1
 MAX_DELEGATION_DEPTH_CEILING = 1  # depth is capped at 1; never recursive
 
-SSE_RECONNECT_LIMIT = 3  # bounded reconnection; never an infinite loop
+RECONNECT_LIMIT = 3  # bounded reconnect attempts; never an infinite loop
+SSE_RECONNECT_LIMIT = RECONNECT_LIMIT  # legacy alias (pre-poll naming)
+
+#: Pause between executor event sweeps. Poll-based providers (e.g. opencode
+#: v2) answer each `iter_session_events` call with one bounded sweep; without
+#: a pause the monitor would hammer HTTP back-to-back for the whole run.
+POLL_INTERVAL_SECONDS = 2.0

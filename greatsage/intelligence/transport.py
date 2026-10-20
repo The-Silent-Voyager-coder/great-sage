@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from collections.abc import Iterator
 from typing import Any
 
 
@@ -103,62 +102,3 @@ def _request_raw(
         raw = response.read()
         status = getattr(response, "status", 200)
     return raw, status
-
-
-def iter_sse(
-    url: str,
-    *,
-    headers: dict[str, str] | None = None,
-    timeout: float | None = None,
-    default_timeout: float = 30.0,
-) -> Iterator[tuple[str, str]]:
-    """Yield (event, data) pairs from a Server-Sent Events stream.
-
-    Framing follows the SSE specification: ``event:`` names the event
-    (default ``message``), ``data:`` lines accumulate, and a blank line
-    dispatches the pair. Comments and malformed lines are skipped.
-
-    Raises HTTPErrorStatus for non-2xx statuses and urllib.error.URLError
-    for connection failures, socket timeouts while reading, or premature
-    stream termination — the caller owns reconnection policy (bounded).
-    """
-    request_headers = {"Accept": "text/event-stream"}
-    if headers:
-        request_headers.update(headers)
-    req = urllib.request.Request(url, headers=request_headers, method="GET")
-    act_timeout = _timeout_settings(timeout, default_timeout)
-    try:
-        response = urllib.request.urlopen(req, timeout=act_timeout)  # noqa: S310
-    except urllib.error.HTTPError as exc:
-        raise HTTPErrorStatus(exc.code, exc.read().decode("utf-8", errors="replace")) from exc
-    event_name = "message"
-    data_lines: list[str] = []
-    try:
-        with response:
-            while True:
-                try:
-                    line = response.readline()
-                except TimeoutError as exc:
-                    raise urllib.error.URLError("SSE read timed out") from exc
-                except OSError as exc:
-                    raise urllib.error.URLError(f"SSE stream lost: {exc}") from exc
-                if not line:
-                    if data_lines:
-                        yield event_name, "\n".join(data_lines)
-                    return
-                text = line.decode("utf-8", errors="replace").rstrip("\r\n")
-                if not text:
-                    if data_lines:
-                        yield event_name, "\n".join(data_lines)
-                    event_name = "message"
-                    data_lines = []
-                    continue
-                if text.startswith("event:"):
-                    event_name = text[len("event:") :].strip()
-                elif text.startswith("data:"):
-                    data_lines.append(text[len("data:") :].strip())
-    finally:
-        try:
-            response.close()
-        except OSError:
-            pass

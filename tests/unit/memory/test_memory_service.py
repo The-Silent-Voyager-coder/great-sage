@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from greatsage.configuration.loader import load_config
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.events.models import (
     MEMORY_CREATED,
@@ -47,12 +47,12 @@ class RecordingPublisher:
 
 
 @pytest.fixture
-def config(valid_config_yaml: Path) -> JarvisConfig:
+def config(valid_config_yaml: Path) -> SageConfig:
     return load_config(valid_config_yaml).config
 
 
 @pytest.fixture
-def service(config: JarvisConfig) -> MemoryService:
+def service(config: SageConfig) -> MemoryService:
     svc = MemoryService()
     svc.start(config)
     yield svc
@@ -66,7 +66,7 @@ def publisher(service: MemoryService) -> RecordingPublisher:
     return recorder
 
 
-def test_start_healthy_creates_database(config: JarvisConfig) -> None:
+def test_start_healthy_creates_database(config: SageConfig) -> None:
     svc = MemoryService()
     svc.start(config)
     assert svc.availability == "healthy"
@@ -106,7 +106,7 @@ def test_start_disabled_config(valid_config_yaml: Path) -> None:
 
 
 def test_start_corrupt_database_unavailable(
-    config: JarvisConfig, tmp_path: Path
+    config: SageConfig, tmp_path: Path
 ) -> None:
     from dataclasses import replace
 

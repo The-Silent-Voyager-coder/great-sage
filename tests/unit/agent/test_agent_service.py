@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from greatsage.agent.approval import AgentApprovalProvider
+from greatsage.agent.approval_broker import ApprovalBroker
 from greatsage.agent.models import AgentState
 from greatsage.agent.service import AgentService
 from greatsage.configuration.loader import load_config
@@ -94,12 +95,12 @@ class FakeMemoryService:
 
 
 def _config(tmp_path: Path, *, agent_enabled: bool = True) -> object:
-    path = tmp_path / "jarvis.yaml"
+    path = tmp_path / "sage.yaml"
     d = str(tmp_path).replace("\\", "/")
     path.write_text(
         f"""
 core:
-  name: "J.A.R.V.I.S. Test"
+  name: "Great Sage Test"
   data_dir: "{d}/data"
   cache_dir: "{d}/cache"
   logs_dir: "{d}/logs"
@@ -263,6 +264,34 @@ def test_run_with_custom_approval_decides(tmp_path: Path) -> None:
     result = service.run("call the tool", max_steps=2, approval=approval)
     assert result.state is AgentState.COMPLETED
     assert result.tool_calls == 1
+
+
+def test_broker_approval_marks_waiting_and_completes(tmp_path: Path) -> None:
+    tools = FakeTools()
+    tools.mark_requires_approval("filesystem.list")
+    intelligence = FakeIntelligenceService(
+        FakeProviderRegistry({"local": FakeProvider("local")}),
+        [tool_handler("filesystem.list"), text_handler("done")],
+        keep_last=False,
+    )
+    service = AgentService(intelligence=intelligence, tools=tools)
+    service.start(_config(tmp_path))
+    broker = ApprovalBroker(wait_seconds=5.0)
+    outcome: dict = {}
+
+    def worker() -> None:
+        outcome["result"] = service.run("call the tool", max_steps=2, approval=broker)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    pending = broker.wait_for_pending(timeout=5.0)
+    assert pending is not None
+    assert service.health()["current"]["state"] == AgentState.WAITING_FOR_APPROVAL.value
+    assert broker.approve(pending.request_id) is True
+    thread.join(timeout=10.0)
+    assert not thread.is_alive()
+    assert outcome["result"].state is AgentState.COMPLETED
+    assert service.health()["current"] == {}
 
 
 def test_memory_retrieval_is_bounded_and_plugged(tmp_path: Path) -> None:
@@ -453,12 +482,12 @@ class _DelegationEvent:
 
 
 def _delegation_config(tmp_path: Path) -> object:
-    path = tmp_path / "jarvis-delegation.yaml"
+    path = tmp_path / "sage-delegation.yaml"
     d = str(tmp_path).replace("\\", "/")
     path.write_text(
         f"""
 core:
-  name: "J.A.R.V.I.S. Agent Delegate Test"
+  name: "Great Sage Agent Delegate Test"
   data_dir: "{d}/data"
   cache_dir: "{d}/cache"
   logs_dir: "{d}/logs"

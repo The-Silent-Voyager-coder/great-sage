@@ -16,11 +16,25 @@ long-running objectives, and recover from failures.
 | Platform | Windows 11 |
 | Cost | ₹0 / $0 — no paid APIs, no paid hosting, no paid cloud |
 | Language | Python 3.11+ |
-| Status | **Phase 5B — Controlled OpenCode delegation** (Great Sage is authority, OpenCode is delegated executor) |
+| Status | **Phases 1–10 implemented** — trust hardening + interactive approvals in progress |
 
 ---
 
-## Current Status (Phase 4)
+## Current Status (October 2026)
+
+Phases 1–10 are implemented. The current focus is hardening the trust layer,
+not adding another surface:
+
+- Append-only, redacted audit log; CLI tool/agent events are no longer dropped.
+- Interactive approvals: `greatsage agent run --interactive` pauses on every
+  `ASK` call and accepts a human decision only for the pending request.
+- Plan gate: `task run` requires a `READY` plan; `--approve` installs a
+  task-scoped approval provider rather than a global auto-approval switch.
+- Provider health recovers to `READY` after a successful probe.
+- Failed task steps are retried on explicit resume.
+- Full suite: **1,173 tests collected**, passing; `ruff` and `mypy` clean.
+
+## Phase 4 — Tool System
 
 Phases 1–3 delivered the core runtime, the intelligence layer, and the memory
 foundation; Phase 4 adds the permissioned tool system on top of all three:
@@ -28,9 +42,10 @@ foundation; Phase 4 adds the permissioned tool system on top of all three:
 - **One security pipeline, no bypass**: AI → `ToolRequest` → registry →
   security policy (ALLOW/ASK/DENY) → approval → execution → audit events.
   The CLI `tools execute` command drives the identical code path.
-- **Typed tool registry**: 15 built-in tools (`filesystem.list|stat|read|
+- **Typed tool registry**: 21 built-in tools (`filesystem.list|stat|read|
   mkdir|write`, `process.list|info`, `system.info`, `shell.execute`,
-  `network.fetch`, `homeassistant.states|call`, `gui.screenshot|click|type`) with
+  `network.fetch|webfetch`, `homeassistant.states|call`, `gui.screenshot|click|type`,
+  `voice.listen|speak|wake`, `vision.capture|describe`) with
   declared risk levels and JSON-schema validation; duplicate ids and invalid
   schemas are rejected at registration
 - **Risk levels + modes**: `safe`/`low`/`medium`/`high`/`critical` with a
@@ -56,7 +71,7 @@ foundation; Phase 4 adds the permissioned tool system on top of all three:
   voice/chat adds justified local-only deps (vosk, piper-tts, sounddevice,
   numpy — see `docs/DEPENDENCY_POLICY.md` §5)
 
-## Current Status (Phase 5A)
+## Phase 5A — Agent Loop
 
 Phase 5A adds the bounded, auditable AI↔tool loop on top of all four layers:
 
@@ -87,24 +102,24 @@ Phase 5A adds the bounded, auditable AI↔tool loop on top of all four layers:
 
 **Shipped since**: autonomy task-graph + verification gate (Phase 7),
 security hardening — secret redaction + policy tightening (Phase 9) —
-voice pipeline with stub backends, no model downloads (Phase 6), vision
-with stub backend, no OCR (Phase 8), read-only HUD status/dashboard
+voice pipeline with real local engines (Vosk/Piper, mock fallback), no model downloads (Phase 6), vision
+with real Windows GDI capture and local VLM grounding (stub fallbacks) (Phase 8), read-only HUD status/dashboard
 (Phase 10), and OpenCode delegation (Phase 5B). Semantic-memory ingestion
 remains future work.
 
-## Current Status (Phase 5B)
+## Phase 5B — Delegation
 
 Phase 5B adds controlled OpenCode delegation under full Great Sage authority:
 
-- **Great Sage is authority, OpenCode is executor**: `USER → Great Sage → AgentOrchestrator → DelegationManager → Great Sage SecurityPolicy → OpenCode Provider → OpenCode Server → SSE → Great Sage events`. OpenCode never bypasses the security layer.
+- **Great Sage is authority, OpenCode is executor**: `USER → Great Sage → AgentOrchestrator → DelegationManager → Great Sage SecurityPolicy → OpenCode Provider → OpenCode Server (v2 API) → poll sweeps (messages + permissions) → Great Sage events`. OpenCode never bypasses the security layer.
 - **Provider-neutral delegation**: `DelegationManager` talks only to a `DelegationProvider` protocol (`Capability.DELEGATION`); OpenCode-specific wire formats stay in `greatsage/intelligence/opencode.py`.
 - **Secure permission routing**: every executor permission (`read`/`edit`/`write`/`bash`/`webfetch`/`websearch`/`task`/`skill`…) is mapped to a Great Sage `ToolCategory`/`ToolRisk`; unknown actions default to `HIGH`/`SYSTEM` and are `ASK`-gated; `ALLOW` auto-approves only `SAFE`/`LOW` inside allowed roots, `DENY` blocks `CRITICAL`/forbidden commands and protected paths.
-- **Hard-bounded execution**: `max_wall_time_seconds` (1800s default, 7200s ceiling), `max_output_bytes` (4 MiB/32 MiB), `max_permission_requests` (50/200), `max_session_count` (3/10), `max_delegation_depth` (1 — no recursion), `SSE_RECONNECT_LIMIT` (3) — validated at config load and re-validated per run.
-- **Full lifecycle**: `DelegationState` (`created → starting → running ⇄ waiting_for_permission → completing → completed/failed/cancelled/timed_out`), bounded SSE with malformed-event tolerance, timeout/cancellation/diff retrieval, session cleanup, and `DELEGATION_*` + `TOOL_*` audit events (no prompts, no secrets).
+- **Hard-bounded execution**: `max_wall_time_seconds` (1800s default, 7200s ceiling), `max_output_bytes` (4 MiB/32 MiB), `max_permission_requests` (50/200), `max_session_count` (3/10), `max_delegation_depth` (1 — no recursion), `RECONNECT_LIMIT` (3), poll interval 2s — validated at config load and re-validated per run.
+- **Full lifecycle**: `DelegationState` (`created → starting → running ⇄ waiting_for_permission → completing → completed/failed/cancelled/timed_out`), bounded poll sweeps (deduped, heartbeat while quiet, malformed-event tolerance), timeout/cancellation/diff retrieval, session cleanup, and `DELEGATION_*` + `TOOL_*` audit events (no prompts, no secrets).
 - **CLI**: `greatsage delegation health|list|get <task_id>|cancel <task_id> [--json]` (same auth path as
 `greatsage agent`/`tools`).
-- **Tests**: 1050 passing (13 Sept 2026; incl. 55 delegation, 32 OpenCode),
-  `ruff`/`mypy` clean.
+- **Tests**: 1,173 collected passing (October 2026; incl. delegation + OpenCode
+  provider suites), `ruff`/`mypy` clean.
 
 ## Development Phases
 
@@ -116,18 +131,18 @@ Phase 5B adds controlled OpenCode delegation under full Great Sage authority:
 | 3 | Memory (SQLite, provenance) | **Done** |
 | 4 | Tools (files, terminal, processes, system) | **Done** |
 | 5A | Agent loop (bounded AI↔tool, limits, approval, cancellation) | **Done** |
-| 5B | Controlled OpenCode delegation (DelegationManager, secure permission routing, bounded SSE) | **Done** |
+| 5B | Controlled OpenCode delegation (DelegationManager, secure permission routing, bounded polling) | **Done** |
 | 5 | OpenCode integration | **Done** (delivered via 5B delegation layer) |
 | 6 | Workspace/planning/task foundation + voice pipeline (wake word, STT, TTS) | **Done** |
 | 7 | Autonomy (planner, task graph, verification) | **Done** |
-| 8 | Vision (bounded capture, OCR-free grounding, permissioned tools) | **Done** |
+| 8 | Vision (bounded capture, local VLM grounding, permissioned tools) | **Done** |
 | 9 | Security hardening | **Done** |
 | 10 | HUD interface (local-first status/dashboard) | **Done** |
 
 ## Repository Layout
 
 ```text
-greatsage/
+great-sage/          → repository root
 ├── docs/            → architecture & engineering documents (read first)
 ├── config/          → example configuration
 ├── greatsage/       → Python package; one module per subsystem
@@ -196,7 +211,9 @@ python -m venv .venv
 # medium/high-risk tools need --approve; dangerous commands and paths
 # outside allowed roots are denied by policy either way
 
-# inspect and drive the bounded agent loop (needs a tool-calling provider)
+# inspect and drive the bounded agent loop (needs a tool-calling provider;
+# the configured local model works when Ollama reports the `tools`
+# capability for it, e.g. llama3.1:8b)
 .\.venv\Scripts\greatsage.exe agent health
 .\.venv\Scripts\greatsage.exe agent run --prompt "summarize this repo"
 .\.venv\Scripts\greatsage.exe agent run --prompt "check the system" --json
@@ -219,7 +236,7 @@ python -m venv .venv
 
 # run the test suite, linter, and type checker
 .\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m ruff check greatsage tests
 .\.venv\Scripts\python.exe -m mypy greatsage
 ```
 
@@ -230,7 +247,7 @@ configuration/input.
 The `ai` commands probe configured providers (`ai.providers.*`); Ollama
 absent or not running is fine — the provider reports `unavailable` and the
 CLI still exits cleanly (exit `1` from `ai health`). No models are ever
-downloaded by Great Sage The `memory` commands need no AI services at all:
+downloaded by Great Sage. The `memory` commands need no AI services at all:
 they read/write the local SQLite database configured under `memory.*`.
 Memory content is shown only with `--content`; every command supports
 `--json`.
@@ -253,7 +270,7 @@ Memory content is shown only with `--content`; every command supports
 
 - Decorative interfaces and animations (HUD ships read-only status/dashboard only — Phase 10)
 - Cloud/paid voice, vision, or model services (all pipelines are local-first, zero-cost)
-- Unattended multi-agent orchestration (Phase 7; the Phase 5A loop is
-  single-run and user-initiated)
+- Unattended multi-agent orchestration (autonomy primitives — planner, task
+  graph, verification — stay user-initiated and bounded single-run)
 - Unbounded autonomy (delegation is bounded: depth 1, 30 min wall-clock, 4 MiB output, 50 permissions, 3 sessions)
 - Any paid service integration

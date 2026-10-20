@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.events.models import (
     SPEECH_TRANSCRIBED,
@@ -108,7 +108,7 @@ class VoiceService:
 
     # --- lifecycle -----------------------------------------------------
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         if config is None:
             self.availability = "unavailable"
             self.detail = "no configuration provided"

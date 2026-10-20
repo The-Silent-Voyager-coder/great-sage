@@ -1,4 +1,4 @@
-"""J.A.R.V.I.S. HUD interface (Phase 10).
+"""Great Sage HUD interface (Phase 10).
 
 Local-first, zero-cost, read-only status/dashboard over the existing
 subsystem facades. The HUD is a leaf consumer: it aggregates health,

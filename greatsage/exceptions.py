@@ -1,35 +1,35 @@
-"""J.A.R.V.I.S.-specific exception hierarchy.
+"""Great Sage-specific exception hierarchy.
 
 Small by design (see docs/DEVELOPMENT_RULES.md — no exception sprawl).
 Every error preserves useful context via its message.
 """
 
 
-class JarvisError(Exception):
-    """Base class for all J.A.R.V.I.S. errors."""
+class SageError(Exception):
+    """Base class for all Great Sage errors."""
 
 
-class ConfigurationError(JarvisError):
+class ConfigurationError(SageError):
     """Configuration could not be loaded or validated."""
 
 
-class LifecycleError(JarvisError):
+class LifecycleError(SageError):
     """An invalid runtime state transition or lifecycle violation."""
 
 
-class ServiceError(JarvisError):
+class ServiceError(SageError):
     """Service registry registration, retrieval, or lifecycle failure."""
 
 
-class EventError(JarvisError):
+class EventError(SageError):
     """Event publication or bus lifecycle failure."""
 
 
-class ValidationError(JarvisError):
+class ValidationError(SageError):
     """Input did not pass validation."""
 
 
-class ProviderError(JarvisError):
+class ProviderError(SageError):
     """A provider adapter failed (network, malformed response, service error)."""
 
 
@@ -41,11 +41,11 @@ class ProviderCapabilityError(ProviderError):
     """The requested behavior is not supported by this provider's capabilities."""
 
 
-class RoutingError(JarvisError):
+class RoutingError(SageError):
     """No provider could be selected for the request (policy + availability)."""
 
 
-class MemoryError(JarvisError):
+class MemoryError(SageError):
     """The memory subsystem failed (database, repository, or service)."""
 
 
@@ -65,7 +65,7 @@ class MemoryUnavailableError(MemoryError):
     """The memory subsystem failed to start and cannot serve requests."""
 
 
-class ToolError(JarvisError):
+class ToolError(SageError):
     """The tool subsystem failed (registry, policy, or execution)."""
 
 
@@ -89,7 +89,7 @@ class ToolUnavailableError(ToolError):
     """The tool subsystem failed to start and cannot serve requests."""
 
 
-class AgentError(JarvisError):
+class AgentError(SageError):
     """The agent subsystem failed (orchestration, limits, or lifecycle)."""
 
 
@@ -121,7 +121,7 @@ class AgentUnavailableError(AgentError):
     """The agent subsystem failed to start and cannot serve requests."""
 
 
-class DelegationError(JarvisError):
+class DelegationError(SageError):
     """The delegation subsystem failed (lifecycle, limits, or transport)."""
 
 
@@ -153,7 +153,7 @@ class DelegationUnavailableError(DelegationError):
     """The delegation subsystem failed to start and cannot serve requests."""
 
 
-class WorkspaceError(JarvisError):
+class WorkspaceError(SageError):
     """Workspace discovery failed."""
 
 
@@ -165,7 +165,7 @@ class WorkspaceUnavailableError(WorkspaceError):
     """Workspace subsystem not available."""
 
 
-class PlanningError(JarvisError):
+class PlanningError(SageError):
     """Planning failed."""
 
 
@@ -177,7 +177,7 @@ class PlanningUnavailableError(PlanningError):
     """Planning subsystem not available."""
 
 
-class TaskError(JarvisError):
+class TaskError(SageError):
     """Task execution failed."""
 
 
@@ -209,7 +209,7 @@ class TaskUnavailableError(TaskError):
     """Task subsystem not available."""
 
 
-class HudError(JarvisError):
+class HudError(SageError):
     """The HUD subsystem failed (read-only aggregation error)."""
 
 
@@ -221,7 +221,7 @@ class HudUnavailableError(HudError):
     """The HUD snapshot could not be assembled (runtime not started)."""
 
 
-class VisionError(JarvisError):
+class VisionError(SageError):
     """The vision subsystem failed (capture, grounding, or storage)."""
 
 
@@ -237,7 +237,7 @@ class VisionUnavailableError(VisionError):
     """The vision subsystem failed to start and cannot serve requests."""
 
 
-class VoiceError(JarvisError):
+class VoiceError(SageError):
     """The voice subsystem failed (wake word, STT, TTS, or storage)."""
 
 
@@ -253,7 +253,7 @@ class VoiceUnavailableError(VoiceError):
     """The voice subsystem failed to start and cannot serve requests."""
 
 
-class SchedulerError(JarvisError):
+class SchedulerError(SageError):
     """The scheduler subsystem failed (schedules, ticks, or storage)."""
 
 
@@ -263,3 +263,8 @@ class SchedulerValidationError(SchedulerError):
 
 class SchedulerUnavailableError(SchedulerError):
     """The scheduler subsystem failed to start and cannot serve requests."""
+
+
+# --- Previous-generation aliases (past life: Jarvis) ---
+# Kept for backward compatibility; new code must use SageError.
+JarvisError = SageError

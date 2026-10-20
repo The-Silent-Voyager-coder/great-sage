@@ -139,6 +139,26 @@ def test_embed_on_save_and_semantic_rank(
         service.shutdown()
 
 
+def test_semantic_respects_text_filters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The vector path must honor the same filters as text search (parity):
+    # a `--semantic` query may never surface rows the text path would hide.
+    service = _service_with_embeddings(tmp_path, monkeypatch)
+    try:
+        keep = service.remember("the cat sat", source="alpha", confidence=0.9)
+        service.remember("the cat sleeps", source="beta", confidence=0.9)
+        service.remember("the cat runs", source="alpha", confidence=0.2)
+        result = service.retrieve(
+            "my cat", semantic=True, source="alpha", minimum_confidence=0.5
+        )
+        assert [item.memory.id for item in result.items] == [keep.id]
+        none = service.retrieve("my cat", semantic=True, provenance="import")
+        assert none.total == 0
+    finally:
+        service.shutdown()
+
+
 def test_forget_drops_vector(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     service = _service_with_embeddings(tmp_path, monkeypatch)
     try:

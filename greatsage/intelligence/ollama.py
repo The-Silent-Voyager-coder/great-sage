@@ -53,6 +53,42 @@ def _map_finish_reason(reason: str | None) -> FinishReason:
     return FinishReason.STOP
 
 
+def _pick_default_model(models: tuple[str, ...]) -> str | None:
+    """First non-embedding model, else the first model, else None."""
+    for name in models:
+        if "embed" not in name.lower():
+            return name
+    return models[0] if models else None
+
+
+def _parse_tool_calls(raw: Any) -> list[ToolCall] | None:
+    """Parse Ollama `message.tool_calls` (arguments may arrive as JSON text)."""
+    if not isinstance(raw, list) or not raw:
+        return None
+    calls: list[ToolCall] = []
+    for index, call in enumerate(raw):
+        if not isinstance(call, dict):
+            continue
+        raw_function = call.get("function")
+        function: dict[str, Any] = raw_function if isinstance(raw_function, dict) else {}
+        arguments: Any = function.get("arguments")
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except ValueError:
+                arguments = {}
+        if not isinstance(arguments, dict):
+            arguments = {}
+        calls.append(
+            ToolCall(
+                id=str(call.get("id") or f"call_{index + 1}"),
+                name=str(function.get("name") or call.get("name") or "unknown"),
+                arguments=arguments,
+            )
+        )
+    return calls or None
+
+
 class OllamaProvider(AIProvider):
     """Adapter for a local Ollama server.
 
@@ -74,6 +110,7 @@ class OllamaProvider(AIProvider):
         self._configured_model = model
         self._timeout = timeout_seconds if timeout_seconds > 0 else 60.0
         self._models: tuple[str, ...] = ()
+        self._tool_capable = False
 
     # --- public surface ------------------------------------------------
 
@@ -86,6 +123,8 @@ class OllamaProvider(AIProvider):
         }
         if self._models and any("vision" in name for name in self._models):
             caps.add(Capability.VISION)
+        if self._tool_capable:
+            caps.add(Capability.TOOL_CALLING)
         return ProviderCapabilities(
             capabilities=frozenset(caps),
             model_ids=self._models,
@@ -120,7 +159,20 @@ class OllamaProvider(AIProvider):
             if isinstance(item, dict) and item.get("name")
         )
         self._models = models
-        loaded = self._configured_model if self._configured_model in models else None
+        if not models:
+            self._set_state(ProviderState.DEGRADED, "no models available")
+            return ProviderHealth(
+                provider_id=self._provider_id,
+                ok=False,
+                state=ProviderState.DEGRADED,
+                detail="no models available; pull a model with `ollama pull`",
+            )
+        loaded = (
+            self._configured_model
+            if self._configured_model in models
+            else _pick_default_model(models)
+        )
+        self._tool_capable = self._probe_tool_capability(loaded)
         return ProviderHealth(
             provider_id=self._provider_id,
             ok=True,
@@ -128,6 +180,31 @@ class OllamaProvider(AIProvider):
             detail=f"{len(models)} model(s) available",
             model_loaded=loaded,
         )
+
+    def _probe_tool_capability(self, model: str | None) -> bool:
+        """True when the configured model declares the `tools` capability.
+
+        Ollama reports per-model capabilities via `/api/show`; the probe is
+        best-effort (probe failures keep TOOL_CALLING unadvertised — the agent
+        layer then fails closed with an explicit capability error).
+        """
+        if not model:
+            return False
+        try:
+            data = transport.request_json(
+                _join_url(self._base_url, "/api/show"),
+                method="POST",
+                body={"model": model},
+                timeout=min(self._timeout, 5.0),
+                default_timeout=5.0,
+            )
+        except Exception as exc:  # capability probe is best-effort
+            log.debug("ollama /api/show probe failed: %s", exc)
+            return False
+        if not isinstance(data, dict):
+            return False
+        capabilities = data.get("capabilities")
+        return isinstance(capabilities, list) and "tools" in capabilities
 
     def generate(self, request: AIRequest) -> AIResponse:
         self._require_ready()
@@ -161,18 +238,13 @@ class OllamaProvider(AIProvider):
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
             )
-        tool_calls = None
-        raw_calls = data.get("tool_calls") or []
-        if raw_calls:
-            tool_calls = [
-                ToolCall(
-                    id=str(call.get("id") or f"call_{index}"),
-                    name=str(call.get("function", {}).get("name", "unknown")),
-                    arguments=dict(call.get("function", {}).get("arguments", {})),
-                )
-                for index, call in enumerate(raw_calls)
-                if isinstance(call, dict)
-            ]
+        raw_message = data.get("message")
+        message: dict[str, Any] = raw_message if isinstance(raw_message, dict) else {}
+        tool_calls = _parse_tool_calls(message.get("tool_calls") or data.get("tool_calls"))
+        content = str(message.get("content") or "")
+        finish_reason = _map_finish_reason(data.get("done_reason"))
+        if tool_calls:
+            finish_reason = FinishReason.TOOL_CALL
         elapsed = (datetime.now(UTC) - started).total_seconds() * 1000.0
         log.info(
             "ollama generate completed",
@@ -180,15 +252,15 @@ class OllamaProvider(AIProvider):
                 "component": "intelligence",
                 "provider": self._provider_id,
                 "duration_ms": elapsed,
-                "model": data.get("model", self._configured_model),
+                "model": data.get("model") or self._resolve_model(request.model),
             },
         )
         return AIResponse(
             request_id=request.request_id,
             provider=self._provider_id,
-            model=str(data.get("model") or self._configured_model),
-            content=str(data.get("message", {}).get("content") or ""),
-            finish_reason=_map_finish_reason(data.get("done_reason")),
+            model=str(data.get("model") or self._resolve_model(request.model)),
+            content=content,
+            finish_reason=finish_reason,
             usage=usage,
             tool_calls=tool_calls,
         )
@@ -263,27 +335,43 @@ class OllamaProvider(AIProvider):
 
     # --- internals ------------------------------------------------------
 
+    def _resolve_model(self, requested: str | None) -> str:
+        """Pick the request model, the configured model, or a local chat model.
+
+        The example configuration leaves ``model`` empty on purpose. Ollama
+        still requires an explicit model on ``/api/chat``, so an empty config
+        must not become an empty request field. Prefer the first non-embedding
+        model when no model was configured.
+        """
+        model = (requested or self._configured_model or "").strip()
+        if model:
+            return model
+        fallback = _pick_default_model(self._models)
+        if fallback is not None:
+            return fallback
+        raise ProviderError(
+            "no Ollama model is configured or available; "
+            "set ai.providers.local.model or pull a model"
+        )
+
     def _chat_body(self, request: AIRequest, streaming: bool = False) -> dict[str, Any]:
         messages: list[dict[str, Any]] = []
         if request.system_prompt:
             messages.append({"role": "system", "content": request.system_prompt})
         for message in request.messages:
-            messages.append(
-                {
-                    "role": message.role.value,
-                    "content": self._render_content(message),
-                    **(
-                        {"tool_call_id": message.tool_call_id}
-                        if message.tool_call_id
-                        else {}
-                    ),
-                }
-            )
+            messages.append(self._render_message(message))
         body: dict[str, Any] = {
-            "model": request.model or self._configured_model,
+            "model": self._resolve_model(request.model),
             "messages": messages,
             "stream": streaming,
         }
+        # Explicit per-request thinking control (Ollama `think`): present only
+        # when the caller set a boolean — thinking models (Spark-X2.5, qwen3)
+        # otherwise use their model default. Chat disables it for snappy
+        # replies; the agent loop keeps deliberation for tool planning.
+        think = request.metadata.get("think")
+        if isinstance(think, bool):
+            body["think"] = think
         if request.temperature is not None:
             body["options"] = {"temperature": request.temperature}
         if request.tools:
@@ -300,18 +388,33 @@ class OllamaProvider(AIProvider):
             ]
         return body
 
-    def _render_content(self, message: Message) -> str:
+    def _render_message(self, message: Message) -> dict[str, Any]:
         if isinstance(message.content, str):
-            return message.content
-        parts: list[str] = []
+            return {"role": message.role.value, "content": message.content}
+        # Structured parts: assistant turns may carry tool calls alongside text
+        # (rendered as the native Ollama tool_calls protocol, not as text).
+        texts: list[str] = []
+        tool_calls: list[dict[str, Any]] = []
         for part in message.content:
             if part.kind == "text":
-                parts.append(part.text)
+                texts.append(part.text)
             else:
-                parts.append(
-                    f"[tool_call name={part.name} arguments={json.dumps(part.arguments)}]"
+                tool_calls.append(
+                    {
+                        "function": {
+                            "name": part.name,
+                            "arguments": dict(part.arguments),
+                        }
+                    }
                 )
-        return "\n".join(parts)
+        rendered: dict[str, Any] = {
+            "role": message.role.value,
+            "content": "\n".join(texts),
+        }
+        if tool_calls:
+            rendered["tool_calls"] = tool_calls
+        return rendered
 
     def _on_shutdown(self) -> None:
         self._models = ()
+        self._tool_capable = False

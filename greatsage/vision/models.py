@@ -21,7 +21,9 @@ from greatsage.exceptions import VisionValidationError
 class VisionBackend(StrEnum):
     """Capture backends. Only local, zero-cost backends are permitted."""
 
-    STUB = "stub"
+    STUB = "stub"  # synthetic frames (fallback, hermetic tests)
+    GDI = "gdi"  # real primary-monitor capture via Windows GDI (ctypes)
+    OLLAMA = "ollama"  # descriptions from a local Ollama vision model
 
 
 def new_capture_id() -> str:

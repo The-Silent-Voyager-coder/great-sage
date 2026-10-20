@@ -26,7 +26,7 @@ def write_agent_config(tmp_path: Path) -> Path:
     path.write_text(
         f"""
 core:
-  name: "J.A.R.V.I.S. Agent CLI"
+  name: "Great Sage Agent CLI"
   data_dir: "{d}/data"
   cache_dir: "{d}/cache"
   logs_dir: "{d}/logs"
@@ -105,6 +105,35 @@ def _start_runtime_with_mock(args) -> Runtime:
     return runtime
 
 
+def _start_runtime_with_write_mock(workspace: Path):
+    target = workspace / "approved.txt"
+
+    def start(args) -> Runtime:
+        runtime = Runtime.create(args.config)
+        asyncio.run(runtime.start())
+        runtime.intelligence.register_mock(
+            provider_id="local",
+            script=(
+                {
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "name": "filesystem.write",
+                            "arguments": {
+                                "path": str(target),
+                                "content": "approved",
+                            },
+                        }
+                    ]
+                },
+                {"content": "write finished."},
+            ),
+        )
+        return runtime
+
+    return start
+
+
 def test_agent_health_offline(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     config = write_agent_config(tmp_path)
     code = main(["agent", "health", "--config", str(config)])
@@ -138,6 +167,58 @@ def test_agent_run_safe_loop(
     assert "state        completed" in out
     assert "tool_calls   1" in out
     assert "System checked via agent loop." in out
+
+
+def test_agent_run_interactive_approves_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = write_agent_config(tmp_path)
+    workspace = tmp_path / "workspace"
+    monkeypatch.setattr(
+        cli_module, "_runtime_from_args", _start_runtime_with_write_mock(workspace)
+    )
+    monkeypatch.setattr("builtins.input", lambda: "y")
+    code = main(
+        [
+            "agent", "run",
+            "--prompt", "write the approved file",
+            "--interactive",
+            "--config", str(config),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == EXIT_OK
+    assert (workspace / "approved.txt").read_text(encoding="utf-8") == "approved"
+    assert "Approval required" in captured.err
+    assert "risk       medium" in captured.err
+    assert "state        completed" in captured.out
+    assert "tool_calls   1" in captured.out
+
+
+def test_agent_run_interactive_denies_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = write_agent_config(tmp_path)
+    workspace = tmp_path / "workspace"
+    monkeypatch.setattr(
+        cli_module, "_runtime_from_args", _start_runtime_with_write_mock(workspace)
+    )
+    monkeypatch.setattr("builtins.input", lambda: "n")
+    code = main(
+        [
+            "agent", "run",
+            "--prompt", "write the approved file",
+            "--interactive",
+            "--config", str(config),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == EXIT_OK
+    assert not (workspace / "approved.txt").exists()
+    assert "Approval required" in captured.err
+    assert "denied" in captured.err
+    assert "state        completed" in captured.out
+    assert "tool_calls   1" in captured.out
 
 
 def test_agent_run_json(

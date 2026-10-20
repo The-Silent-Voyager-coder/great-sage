@@ -13,7 +13,7 @@ from greatsage.cli import EXIT_INVALID, EXIT_OK, main
 
 def write_cli_config(tmp_path: Path) -> Path:
     d = str(tmp_path).replace("\\", "/")
-    p = tmp_path / "jarvis.yaml"
+    p = tmp_path / "sage.yaml"
     p.write_text(
         f"""
 core:

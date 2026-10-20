@@ -6,7 +6,7 @@ from greatsage.configuration.loader import (
     LoadedConfig,
     load_config,
 )
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import JarvisConfig, SageConfig
 from greatsage.configuration.validation import ConfigProblem, format_problems, validate
 
 __all__ = [
@@ -14,6 +14,7 @@ __all__ = [
     "DEFAULT_CONFIG_PATH",
     "ConfigProblem",
     "JarvisConfig",
+    "SageConfig",
     "LoadedConfig",
     "format_problems",
     "load_config",

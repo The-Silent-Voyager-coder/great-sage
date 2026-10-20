@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from greatsage.agent.approval import AgentApprovalProvider
+from greatsage.agent.approval import AgentApprovalProvider, NotifyingApprovalProvider
 from greatsage.agent.cancellation import CancellationToken
 from greatsage.agent.models import (
     AgentContext,
@@ -23,7 +23,7 @@ from greatsage.agent.models import (
     AgentTask,
 )
 from greatsage.agent.orchestrator import AgentOrchestrator
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.exceptions import (
     AgentUnavailableError,
@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from greatsage.delegation.models import DelegationRequest, DelegationResult
     from greatsage.intelligence.service import IntelligenceService
     from greatsage.memory.service import MemoryService
+    from greatsage.tools.approval import ApprovalProvider
     from greatsage.tools.service import ToolService
 
 log = logging.getLogger("greatsage.agent.service")
@@ -61,13 +62,13 @@ class AgentService:
         self.publisher: Any = None  # callable(event) -> None, wired by runtime
         self.availability: str = "unavailable"
         self.detail: str = "agent service not started"
-        self._config: JarvisConfig | None = None
+        self._config: SageConfig | None = None
         self._status: AgentRunStatus | None = None
         self._token: CancellationToken | None = None
 
     # --- lifecycle -----------------------------------------------------
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         self._config = config
         if config is None:
             self.availability = "unavailable"
@@ -112,7 +113,7 @@ class AgentService:
         provider: str | None = None,
         model: str | None = None,
         max_steps: int | None = None,
-        approval: AgentApprovalProvider | None = None,
+        approval: ApprovalProvider | None = None,
     ) -> AgentResult:
         """Run one bounded agent task to a terminal state (blocks)."""
         self._require_available()
@@ -138,7 +139,7 @@ class AgentService:
             conversation=(Message.user(prompt),),
             memory_references=self._retrieve_memory(prompt, session_id),
             system_note=(
-                "You are J.A.R.V.I.S. You may call tools to gather facts, but you "
+                "You are Great Sage. You may call tools to gather facts, but you "
                 "must never claim actions you did not perform."
             ),
         )
@@ -147,11 +148,21 @@ class AgentService:
         self._status = status
         self._token = token
         previous_approval = self._tools.approval
-        agent_approval = approval or AgentApprovalProvider(
-            on_pending=lambda request: self._on_approval_pending(status, request),
-            wait_seconds=limits.approval_wait_seconds,
-            cancel_token=token,
-        )
+
+        def _on_pending(request: Any) -> None:
+            self._on_approval_pending(status, request)
+
+        agent_approval: ApprovalProvider
+        if approval is None:
+            agent_approval = AgentApprovalProvider(
+                on_pending=_on_pending,
+                wait_seconds=limits.approval_wait_seconds,
+                cancel_token=token,
+            )
+        else:
+            # Keep the run observably paused even when a caller supplies a
+            # custom provider (CLI broker, future UI provider).
+            agent_approval = NotifyingApprovalProvider(approval, _on_pending)
         self._tools.approval = agent_approval
         try:
             result = AgentOrchestrator(
@@ -175,7 +186,7 @@ class AgentService:
                 log.debug("agent cancel failed: %s", exc)
 
     def delegate(self, request: DelegationRequest) -> DelegationResult:
-        """Delegate a coding task to an executor under JARVIS authority.
+        """Delegate a coding task to an executor under Great Sage authority.
 
         Explicit path only — the agent never fabricates delegation from
         keywords. A depth-0 request is issued against the delegation manager,

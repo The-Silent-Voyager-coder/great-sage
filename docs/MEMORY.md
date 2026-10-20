@@ -12,7 +12,7 @@
 |---|---|---|---|
 | **working** | current task/conversation context | "step 2 in progress: wiring CLI tests" | session RAM only (`WorkingMemoryStore`), TTL, no auto-promotion |
 | **long_term** | stable, genuinely useful facts/preferences | "user's build machine is ASUS V16, 16 GB RAM" | SQLite, curated, persistent |
-| **episodic** | records of J.A.R.V.I.S. actions | "created project → edited X → maven failed → fixed dep → build ok" | SQLite, `record_episode()` |
+| **episodic** | records of Great Sage actions | "created project → edited X → maven failed → fixed dep → build ok" | SQLite, `record_episode()` |
 | **semantic** | retrieved knowledge from documents/projects/notes | "API facts extracted from a README" | SQLite via `add_semantic()` — no ingestion pipeline yet |
 
 ## 2. Memory Entry Schema

@@ -85,6 +85,6 @@ def test_has_pending_reflects_activity() -> None:
     provider = AgentApprovalProvider(wait_seconds=0.02)
     assert not provider.has_pending()
     provider.approve("r2")
-    assert provider.has_pending()
+    assert provider.has_pending()  # recorded decision not yet consumed
     provider.request_approval(_request("r2"), None, "ask")
-    assert provider.has_pending()
+    assert not provider.has_pending()  # consumed → nothing outstanding

@@ -13,14 +13,14 @@
 
 | Layer | Directory | Covers | Real services? |
 |---|---|---|---|
-| Unit | `tests/unit/` | logic of each module in isolation | No |
-| Integration | `tests/integration/` | module-to-module (core ↔ events ↔ config ↔ storage) | Local SQLite only |
-| Provider | `tests/providers/` | AIProvider contract conformance, model router behavior | Mocked HTTP servers |
-| Tools | `tests/tools/` | each tool: validation, execution, permission enforcement, cancel | Temp dirs only |
-| Security | `tests/security/` | risk classification, allow/ask/deny, audit log integrity, TTL expiry, denied-action-retry blocking | No |
-| Memory | `tests/memory/` | memory types, provenance, retrieval, expiration, no-auto-save guarantee | Temp SQLite |
-| Task lifecycle | `tests/tasks/` | full task state machine + restart persistence | Temp SQLite |
-| OpenCode | `tests/opencode/` | client against a **mock OpenCode server** implementing the documented endpoints (OpenAPI 3.1 fixture); permission-request flow, abort, SSE reconnection | Mock server |
+| Unit | `tests/unit/<module>/` | logic of each subsystem in isolation (19 module dirs: core, configuration, events, observability, intelligence, memory, tools, agent, delegation, workspace, planning, task, scheduler, voice, vision, telegram, interface, chat, storage) | No |
+| Integration | `tests/integration/` | end-to-end CLI paths (`test_cli*.py` per subsystem) over temp SQLite + fake HTTP servers | Local temp files only |
+
+Provider adapters (Ollama, OpenCode v2) are tested inside
+`tests/unit/intelligence/` against an in-process `FakeHttpServer`
+(`tests/unit/intelligence/conftest.py`) — no network, no real servers.
+Security-policy coverage lives in `tests/unit/tools/` (policy matrix,
+pathsecurity, shell classifier, redaction, hardening).
 
 ## 3. Required Coverage for Every New Module
 
@@ -44,15 +44,15 @@
 
 ```text
 pytest                     # full suite (dev extra)
-pytest -m safety           # safety subset — must pass before any release
-pytest tests/opencode      # mock-server OpenCode integration
-pytest tests/unit/intelligence   # Phase 2 provider suite
+pytest tests/unit/intelligence   # provider suites (fake HTTP servers)
+pytest tests/integration          # CLI end-to-end paths
 pytest --cov=greatsage --cov-report=term-missing
-ruff check .               # linter
-mypy greatsage                # type checker (dev extra)
+ruff check greatsage tests # linter
+mypy greatsage             # type checker (dev extra)
 ```
 
-Target: ≥80% coverage on `greatsage/` modules; 100% on `security/` decision paths.
+Target: ≥80% coverage on `greatsage/` modules; 100% on the
+`greatsage/tools/policy.py` decision paths (allow / ask / deny matrix).
 
 ## 6. Phase 1 baseline
 
@@ -164,8 +164,11 @@ Coverage:
 - **State machine**: every transition validated; invalid transitions raise.
 - **Approval**: pause in `WAITING_FOR_APPROVAL`, approve/deny resolution,
   denial fed back to the LLM (no auto-retry), approval swap restored after
-  the run, `disapprove_all` fail-closed, timeout path, cancellation of a
-  pending gate.
+  the run, missing provider fail-closed, timeout path, cancellation of a
+  pending gate. Broker tests cover pending-only decisions, redacted argument
+  previews, stale decisions, timeout cleanup, and `reject_all`; CLI
+  integration tests exercise `agent run --interactive` approving and denying
+  a real `filesystem.write` through the full pipeline.
 - **Bounded loop**: `max_steps`, `max_tool_calls`, wall-clock, per-tool
   repeat count, cumulative output bytes, loop detection — each ends
   `LIMIT_REACHED`/`TIMED_OUT` with the exact reason.
@@ -203,7 +206,9 @@ Coverage:
   health` — JSON + text output, empty-goal → exit 2, unknown id → exit 1,
   workspace-context attach, invalid config → exit 2).
 - Key behaviors proven end-to-end through the real CLI: plan steps execute
-  only via the Phase 4 tool pipeline (approval/policy denials hold);
+  only via the Phase 4 tool pipeline (approval/policy denials hold); draft
+  plans are refused, `--approve` is task-scoped, and failed steps retry on
+  resume;
   `workspace scan` outside allowed roots → exit 2; disabled subsystems
   report healthy no-op + clean `unavailable` failures.
 - Packaging regression note: `tests/` must be a regular package
@@ -218,26 +223,33 @@ Coverage:
   code (covered by `tests/integration/test_cli.py::test_version`).
 ## 6e. Phase 5B–10 baseline (delegation, autonomy, voice, vision, HUD, hardening)
 
-- **1071 tests passing** (13 Sept 2026: 1071 total), `ruff check
-  greatsage tests` clean, `mypy greatsage` clean (130 source files).
+- **1090 tests collected** (October 2026), `ruff check
+  greatsage tests` clean, `mypy greatsage` clean (132 source files).
 - New suites since §6d: `tests/unit/delegation/` (models, manager, service),
   `tests/unit/planning/test_graph.py` + `test_verify.py` (Phase 7 DAG +
-  verification gate), `tests/unit/voice/` (6 files, stub backends),
-  `tests/unit/vision/` (7 files, stub backend, no OCR),
+  verification gate), `tests/unit/voice/` (stub + real backend guards),
+  `tests/unit/vision/` (capture backends incl. GDI scaling, grounding stub + fake-server VLM path),
   `tests/unit/interface/test_hud.py` (Phase 10 read-only dashboard),
   `tests/unit/tools/test_security_hardening.py` (Phase 9 redaction + policy
-  tightening), `tests/unit/chat/test_chat.py` (21 tests: text/voice/exit/
-  history/errors), plus CLI integration `test_cli_voice.py`,
-  `test_cli_vision.py`, `test_cli_hud.py`.
-- Test layout has converged to `tests/unit/<module>/` +
-  `tests/integration/test_cli*.py` (the `tests/providers|tools|security|
-  memory|tasks|opencode` top-level layout in §2 remains aspirational).
-- Voice/vision suites assert stub honesty: mock STT/TTS, `[stub-no-ocr]`
-  grounding marker, metadata-only capture — no model downloads, no network.
+  tightening), `tests/unit/chat/test_chat.py` (text/voice/exit/history/errors),
+  plus CLI integration `test_cli_voice.py`, `test_cli_vision.py`,
+  `test_cli_hud.py`.
+- Test layout is `tests/unit/<module>/` +
+  `tests/integration/test_cli*.py` (see §2).
+- Voice/vision suites assert engine honesty: mock STT/TTS are labeled as
+  such, the `[stub-no-ocr]` grounding marker persists for the stub ground,
+  metadata-only capture — no model
+  downloads, no network; tests pin the stub capture backend and stub
+  grounding (`GREATSAGE_VISION_BACKEND=stub`,
+  `GREATSAGE_VISION_GROUNDING=stub`) so no test captures a real screen or
+  runs model inference.
+- OpenCode v2 provider suite (`tests/unit/intelligence/test_opencode.py`)
+  runs against the in-process `FakeHttpServer`: Basic auth, prompt-then-poll,
+  poll sweeps with dedupe/heartbeat, permission decisions, diff scoping.
 ## 6f. Roadmap baseline (scheduler, tools, telegram, embeddings, real voice)
 
-- **1071 tests passing** (13 Sept 2026), `ruff` + `mypy` clean
-  (130 source files).
+- **1090 tests collected** (October 2026), `ruff` + `mypy` clean
+  (132 source files).
 - New: `tests/unit/scheduler/` (models, repo, tick executor),
   `tests/integration/test_cli_schedule.py`,
   `tests/unit/tools/test_network_tools.py` + `test_gui_tools.py`

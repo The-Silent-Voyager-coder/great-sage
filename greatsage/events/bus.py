@@ -84,14 +84,79 @@ class EventBus:
                 log.debug("subscriber error detail", exc_info=exc, extra={"component": "events"})
 
     def publish_nowait(self, event: Event) -> None:
-        """Fire-and-forget publish from synchronous code (errors are logged)."""
+        """Fire-and-forget publish from synchronous code (errors are logged).
+
+        Inside an event loop this schedules a task. In a synchronous context
+        (the CLI calls services after ``asyncio.run(runtime.start())`` has
+        returned) there is no loop to schedule onto, so synchronous
+        subscribers are dispatched inline. Async subscribers cannot be run
+        without a loop and are skipped with a warning; dropping their work is
+        preferable to dropping the whole event, especially for the audit
+        sink. A closed bus drops the event with a debug log.
+        """
         if self._closed:
-            raise EventError("cannot publish: event bus is closed")
+            log.debug(
+                "dropping event on closed bus",
+                extra={"component": "events", "event_type": event.type},
+            )
+            return
         try:
             loop = asyncio.get_running_loop()
-        except RuntimeError as exc:
-            raise EventError("no running event loop for publish_nowait") from exc
-        loop.create_task(self.publish(event))
+        except RuntimeError:
+            self._publish_sync(event)
+            return
+        loop.create_task(self._publish_logged(event))
+
+    def _publish_sync(self, event: Event) -> None:
+        """Dispatch to sync subscribers without an event loop.
+
+        This is the CLI path: services run synchronously after the runtime
+        event loop has closed. Subscriber failures remain isolated, exactly as
+        in the async path.
+        """
+        self._published += 1
+        for sub in tuple(self._subscriptions.values()):
+            if sub.event_type is not None and sub.event_type != event.type:
+                continue
+            try:
+                result = sub.handler(event)
+                if inspect.isawaitable(result):
+                    if inspect.iscoroutine(result):
+                        result.close()
+                    log.warning(
+                        "skipping async event subscriber without a running loop",
+                        extra={
+                            "component": "events",
+                            "event_id": event.id,
+                            "event_type": event.type,
+                        },
+                    )
+            except Exception as exc:  # subscriber isolation
+                log.error(
+                    "event subscriber failed",
+                    extra={
+                        "component": "events",
+                        "event_id": event.id,
+                        "event_type": event.type,
+                    },
+                )
+                log.debug("subscriber error detail", exc_info=exc, extra={"component": "events"})
+
+    async def _publish_logged(self, event: Event) -> None:
+        try:
+            await self.publish(event)
+        except EventError as exc:
+            log.debug(
+                "dropping event on closed bus",
+                extra={"component": "events", "event_type": event.type},
+            )
+            log.debug("publish race detail", exc_info=exc, extra={"component": "events"})
+        except Exception as exc:  # never die loudly in a fire-and-forget task
+            log.error(
+                "fire-and-forget publish failed",
+                extra={"component": "events", "event_type": event.type},
+            )
+            log.debug("publish error detail", exc_info=exc, extra={"component": "events"})
 
     # --- lifecycle ------------------------------------------------------
 

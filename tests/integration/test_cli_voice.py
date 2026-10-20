@@ -17,7 +17,7 @@ def write_config(tmp_path: Path) -> Path:
     path.write_text(
         f"""
 core:
-  name: "J.A.R.V.I.S. Voice CLI Test"
+  name: "Great Sage Voice CLI Test"
   data_dir: "{d}/data"
   cache_dir: "{d}/cache"
   logs_dir: "{d}/logs"
@@ -74,11 +74,11 @@ def test_voice_health_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
 
 def test_voice_listen_text(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     config = write_config(tmp_path)
-    code = main(["voice", "listen", "--text", "hello jarvis", "--config", str(config)])
+    code = main(["voice", "listen", "--text", "hello sage", "--config", str(config)])
     assert code == EXIT_OK
     out = capsys.readouterr().out
     assert "Great Sage Voice Transcript" in out
-    assert "hello jarvis" in out
+    assert "hello sage" in out
 
 
 def test_voice_listen_requires_input(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

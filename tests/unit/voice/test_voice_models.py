@@ -24,15 +24,15 @@ def test_new_utterance_id_format() -> None:
 
 
 def test_wake_result_validation() -> None:
-    WakeResult(detected=True, keyword="jarvis", confidence=1.0).validate()
+    WakeResult(detected=True, keyword="sage", confidence=1.0).validate()
     with pytest.raises(VoiceValidationError):
         WakeResult(detected=True, keyword="", confidence=1.0).validate()
     with pytest.raises(VoiceValidationError):
-        WakeResult(detected=True, keyword="jarvis", confidence=2.0).validate()
+        WakeResult(detected=True, keyword="sage", confidence=2.0).validate()
 
 
 def test_transcript_round_trip() -> None:
-    text = "hello jarvis"
+    text = "hello sage"
     record = Transcript(
         id=new_utterance_id(),
         backend=VoiceBackend.MOCK,
@@ -78,7 +78,7 @@ def test_speech_result_validation() -> None:
 
 def test_redact_text_masks_secrets() -> None:
     assert "***" in redact_text("api_key: hunter2-secret")
-    assert redact_text("hello jarvis") == "hello jarvis"
+    assert redact_text("hello sage") == "hello sage"
 
 
 def test_sanitize_audio_path() -> None:

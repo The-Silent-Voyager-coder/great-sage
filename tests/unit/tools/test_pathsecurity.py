@@ -51,6 +51,7 @@ def test_is_within_relative_root(tmp_path: Path) -> None:
     [
         "memory.db",
         "audit.log",
+        # Previous generation (legacy backups still protected).
         "jarvis.yaml",
         "jarvis.example.yaml",
         "sage-memory.db",

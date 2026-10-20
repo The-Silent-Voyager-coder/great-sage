@@ -18,7 +18,7 @@ def write_tools_config(tmp_path: Path) -> Path:
     path.write_text(
         f"""
 core:
-  name: "J.A.R.V.I.S. Tools CLI"
+  name: "Great Sage Tools CLI"
   data_dir: "{d}/data"
   cache_dir: "{d}/cache"
   logs_dir: "{d}/logs"
@@ -101,7 +101,7 @@ def test_tools_health(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Non
     assert "Great Sage Tool Health" in out
     assert "status    healthy" in out
     assert "mode      normal" in out
-    assert "tools     15" in out
+    assert "tools     21" in out
 
 
 def test_tools_health_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -110,7 +110,7 @@ def test_tools_health_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
     assert code == EXIT_OK
     out = capsys.readouterr().out
     assert '"available": true' in out
-    assert '"tool_count": 15' in out
+    assert '"tool_count": 21' in out
 
 
 def test_tools_execute_safe_tool(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -253,7 +253,7 @@ def test_tools_execute_path_outside_roots_denied(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     config = write_tools_config(tmp_path)
-    outside = tmp_path.parent / "jarvis-outside-root"
+    outside = tmp_path.parent / "sage-outside-root"
     outside.mkdir(exist_ok=True)
     code = main(
         [

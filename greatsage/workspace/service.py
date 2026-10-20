@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.events.models import WORKSPACE_SCAN_FAILED, WORKSPACE_SCANNED, Event
 from greatsage.exceptions import WorkspaceUnavailableError, WorkspaceValidationError
@@ -26,14 +26,14 @@ class WorkspaceService:
         tools: Any | None = None,
     ) -> None:
         self._tools = tools
-        self._config: JarvisConfig | None = None
+        self._config: SageConfig | None = None
         self._scanner: WorkspaceScanner | None = None
         self._repository: WorkspaceRepository | None = None
         self._availability: str = "unavailable"
         self._detail: str = "workspace service not started"
         self.publisher: Any = None
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         self._config = config
         if config is None:
             self._availability = "unavailable"

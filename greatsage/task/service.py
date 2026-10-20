@@ -11,17 +11,43 @@ from typing import Any
 
 import yaml
 
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.exceptions import TaskUnavailableError, TaskValidationError
-from greatsage.planning.models import Plan
+from greatsage.planning.models import Plan, PlanStatus
 from greatsage.planning.sqlite_repository import SqlitePlanningRepository
 from greatsage.task.cancellation import CancellationToken
 from greatsage.task.executor import TaskExecutor
 from greatsage.task.models import TaskRecord, TaskReport, TaskState
 from greatsage.task.sqlite_repository import SqliteTaskRepository
+from greatsage.tools.approval import ApprovalProvider
+from greatsage.tools.models import ApprovalOutcome, Tool, ToolRequest
 
 log = logging.getLogger("greatsage.task.service")
+
+
+class _TaskScopedApprovalProvider:
+    """Approve ASK calls only for one explicitly approved task run.
+
+    ``task run --approve`` is a human approval for that run, not a global
+    auto-approval switch. Requests carrying another task/session fall back to
+    the previously installed provider (or deny when there is none).
+    """
+
+    def __init__(
+        self, task_id: str, fallback: ApprovalProvider | None = None
+    ) -> None:
+        self._task_id = task_id
+        self._fallback = fallback
+
+    def request_approval(
+        self, request: ToolRequest, tool: Tool, reason: str
+    ) -> ApprovalOutcome:
+        if request.task_id == self._task_id:
+            return ApprovalOutcome.APPROVED
+        if self._fallback is not None:
+            return self._fallback.request_approval(request, tool, reason)
+        return ApprovalOutcome.DENIED
 
 
 class TaskService:
@@ -35,7 +61,7 @@ class TaskService:
     ) -> None:
         self._tools = tools
         self._memory = memory
-        self._config: JarvisConfig | None = None
+        self._config: SageConfig | None = None
         self._repository: SqliteTaskRepository | None = None
         self._planning_repo: SqlitePlanningRepository | None = None
         self._executor: TaskExecutor | None = None
@@ -44,7 +70,7 @@ class TaskService:
         self._tokens: dict[str, CancellationToken] = {}
         self.publisher: Any = None
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         self._config = config
         if config is None:
             self._availability = "unavailable"
@@ -62,16 +88,11 @@ class TaskService:
             repo = SqliteTaskRepository(config.task.database_path)
             repo.initialize()
             self._repository = repo
-            # Planning repo shares same file if same path, but we keep separate handle
-            # Use same path as task if planning path same, otherwise separate
-            if config.planning.database_path != config.task.database_path:
-                planning_repo = SqlitePlanningRepository(config.planning.database_path)
-                planning_repo.initialize()
-                self._planning_repo = planning_repo
-            else:
-                # Reuse task repo path for planning reads via separate connection
-                self._planning_repo = SqlitePlanningRepository(config.planning.database_path)
-                self._planning_repo.initialize()
+            # Planning reads always use the planning database path (its own
+            # connection, even when both sections share one file).
+            planning_repo = SqlitePlanningRepository(config.planning.database_path)
+            planning_repo.initialize()
+            self._planning_repo = planning_repo
             self._executor = TaskExecutor(tools=self._tools, repository=repo, publisher=self.publisher, memory=self._memory)  # noqa: E501
             # Sync publisher if set after start
             if self.publisher is not None and self._executor is not None:
@@ -141,12 +162,25 @@ class TaskService:
         assert self._repository is not None
         assert self._config is not None
         assert self._executor is not None
+        assert self._tools is not None
         # Resolve plan
         if isinstance(plan, Plan):
             plan_obj = plan
         else:
             plan_obj = self._load_plan(plan)
         plan_obj.validate()
+        if plan_obj.status is not PlanStatus.READY:
+            raise TaskValidationError(
+                f"plan {plan_obj.id} is {plan_obj.status.value}; "
+                "approve it before execution (status must be ready)"
+            )
+        assert self._planning_repo is not None
+        try:
+            # Persist the exact plan so a failed task can be resumed later,
+            # including plans supplied as a file rather than a stored id.
+            self._planning_repo.save(plan_obj)
+        except Exception as exc:
+            raise TaskValidationError(f"could not persist plan for resume: {exc}") from exc
         if len(plan_obj.steps) > self._config.task.max_steps:
             raise TaskValidationError(f"plan steps {len(plan_obj.steps)} exceeds max {self._config.task.max_steps}")  # noqa: E501
         # Create task record (human approval is recorded, never assumed)
@@ -168,6 +202,9 @@ class TaskService:
         # Ensure executor publisher is current
         if self.publisher is not None:
             self._executor._publisher = self.publisher
+        previous_approval = getattr(self._tools, "approval", None)
+        if approved:
+            self._tools.approval = _TaskScopedApprovalProvider(tid, previous_approval)
         try:
             report = self._executor.execute(
                 plan_obj,
@@ -178,6 +215,8 @@ class TaskService:
             )
             return report
         finally:
+            if approved:
+                self._tools.approval = previous_approval
             self._tokens.pop(tid, None)
 
     def resume(self, task_id: str) -> TaskReport:
@@ -189,13 +228,12 @@ class TaskService:
         record = self._repository.get_task(task_id)
         if record is None:
             raise TaskValidationError(f"task not found: {task_id}")
-        if record.state in (TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.TIMED_OUT):  # noqa: E501
-            # Already terminal — return report from stored results
+        plan = self._planning_repo.get(record.plan_id)
+        if plan is None:
+            raise TaskValidationError(f"plan not found for task: {record.plan_id}")
+        if record.state in (TaskState.COMPLETED, TaskState.CANCELLED):
+            # Completed/cancelled tasks stay terminal; return the stored report.
             results = self._repository.get_step_results(task_id)
-            # Need plan to build report
-            plan = self._planning_repo.get(record.plan_id)
-            if plan is None:
-                raise TaskValidationError(f"plan not found for task: {record.plan_id}")
             return TaskReport(
                 task_id=record.id,
                 plan_id=record.plan_id,
@@ -208,12 +246,11 @@ class TaskService:
                 step_results=tuple(results),
                 summary=f"task {record.state.value} (resumed terminal)",
             )
+        if record.state in (TaskState.FAILED, TaskState.TIMED_OUT):
+            record.reopen()
+            self._repository.update_task(record)
         if record.state not in (TaskState.PAUSED, TaskState.RUNNING, TaskState.PENDING):
             raise TaskValidationError(f"task not resumable in state {record.state.value}")
-        # For PAUSED, set to RUNNING and continue
-        plan = self._planning_repo.get(record.plan_id)
-        if plan is None:
-            raise TaskValidationError(f"plan not found: {record.plan_id}")
         token = CancellationToken()
         self._tokens[task_id] = token
         # Ensure publisher sync

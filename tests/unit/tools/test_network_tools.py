@@ -12,7 +12,7 @@ import pytest
 
 from greatsage.tools.homeassistant_tools import HomeAssistantCallTool, HomeAssistantStatesTool
 from greatsage.tools.models import ToolCategory, ToolContext, ToolRisk
-from greatsage.tools.network_tools import NetworkFetchTool
+from greatsage.tools.network_tools import NetworkFetchTool, NetworkWebfetchTool
 
 
 def _context() -> ToolContext:
@@ -111,6 +111,144 @@ def test_fetch_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
     result = NetworkFetchTool().execute({"url": "https://example.com/missing"}, _context())
     assert result.success is False
     assert "404" in (result.error or "")
+
+
+# --- webfetch: stdlib HTML extraction ------------------------------------
+
+_HTML_PAGE = b"""<html><head><title>Example Docs</title>
+<style>body{color:red}</style></head>
+<body>
+<h1>Welcome</h1>
+<p>Great Sage can <a href="/guide">read docs</a> and summarize them.</p>
+<script>alert('not visible')</script>
+<ul><li>alpha</li><li>beta</li></ul>
+<h2>Usage</h2>
+<p>Call webfetch &amp; relax.</p>
+</body></html>"""
+
+
+def _html_response(body: bytes) -> _FakeResponse:
+    response = _FakeResponse(body)
+    response.headers = _FakeHeaders("text/html; charset=utf-8")
+    return response
+
+
+def test_webfetch_declarations() -> None:
+    tool = NetworkWebfetchTool()
+    assert tool.category is ToolCategory.NETWORK
+    assert tool.risk_level is ToolRisk.MEDIUM
+    assert tool.id == "network.webfetch"
+
+
+def test_webfetch_markdown_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda req, timeout=None: _html_response(_HTML_PAGE),
+    )
+    result = NetworkWebfetchTool().execute({"url": "https://example.com/start"}, _context())
+    assert result.success is True
+    output = result.output or {}
+    assert output["title"] == "Example Docs"
+    assert output["format"] == "markdown"
+    content = output["content"]
+    assert "# Welcome" in content
+    assert "## Usage" in content
+    assert "[read docs](https://example.com/guide)" in content  # relative link resolved
+    assert "- alpha" in content and "- beta" in content
+    assert "Call webfetch & relax." in content  # entity decoded
+    assert "alert" not in content  # script never visible
+    assert "color:red" not in content  # style never visible
+    assert output["truncated"] is False
+
+
+def test_webfetch_text_format_drops_decorations(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda req, timeout=None: _html_response(_HTML_PAGE),
+    )
+    result = NetworkWebfetchTool().execute(
+        {"url": "https://example.com/", "format": "text"}, _context()
+    )
+    assert result.success is True
+    content = (result.output or {})["content"]
+    assert "Welcome" in content
+    assert "# " not in content  # no markdown headings
+    assert "](" not in content  # no markdown links
+    assert "read docs" in content  # link text preserved
+
+
+def test_webfetch_char_cap_truncates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda req, timeout=None: _html_response(_HTML_PAGE),
+    )
+    result = NetworkWebfetchTool().execute(
+        {"url": "https://example.com/", "max_chars": 40}, _context()
+    )
+    assert result.success is True
+    output = result.output or {}
+    assert output["truncated"] is True
+    assert len(output["content"]) == 40
+
+
+def test_webfetch_plain_text_passthrough(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = _FakeResponse(b"plain body")
+    response.headers = _FakeHeaders("text/plain")
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: response)
+    result = NetworkWebfetchTool().execute({"url": "https://example.com/robots.txt"}, _context())
+    assert result.success is True
+    output = result.output or {}
+    assert output["content"] == "plain body"
+    assert output["format"] == "markdown"  # requested format, content untouched
+
+
+def test_webfetch_rejects_unsupported_content_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = _FakeResponse(b"\x00\x01bin")
+    response.headers = _FakeHeaders("application/octet-stream")
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: response)
+    result = NetworkWebfetchTool().execute({"url": "https://example.com/file.bin"}, _context())
+    assert result.success is False
+    assert "content" in (result.error or "")
+
+
+def test_webfetch_redacts_secret_shaped_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    page = b"<html><body><p>token sk-ABCDEFGHIJKLMNOPQRSTUV leaked</p></body></html>"
+    monkeypatch.setattr(
+        "urllib.request.urlopen", lambda req, timeout=None: _html_response(page)
+    )
+    result = NetworkWebfetchTool().execute({"url": "https://example.com/"}, _context())
+    content = (result.output or {})["content"]
+    assert "sk-ABCDEFGHIJKLMNOPQRSTUV" not in content
+    assert "REDACTED" in content
+
+
+def test_webfetch_rejects_bad_urls() -> None:
+    tool = NetworkWebfetchTool()
+    assert tool.execute({"url": "ftp://example.com/x"}, _context()).success is False
+    assert tool.execute({"url": "https://user:pass@example.com/"}, _context()).success is False
+    assert tool.execute({"url": "https://"}, _context()).success is False
+
+
+def test_webfetch_rejects_bad_format_and_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    tool = NetworkWebfetchTool()
+    bad_format = tool.execute({"url": "https://example.com", "format": "pdf"}, _context())
+    assert bad_format.success is False
+
+    def boom(req: object, timeout: object = None) -> _FakeResponse:
+        raise urllib.error.HTTPError(str(req), 503, "down", {}, io.BytesIO())
+
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    result = tool.execute({"url": "https://example.com/"}, _context())
+    assert result.success is False
+    assert "503" in (result.error or "")
+
+
+def test_extract_html_never_raises_on_garbage() -> None:
+    from greatsage.tools.network_tools import extract_html
+
+    title, content = extract_html("not <html ><<< broken", base_url="https://x/", markdown=True)
+    assert isinstance(content, str)  # partial extraction wins, no crash
+    assert title is None
 
 
 def test_ha_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:

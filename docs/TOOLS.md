@@ -124,7 +124,7 @@ Rules:
 
 ## 5. Environment and Execution Bounds (`greatsage/tools/environment.py`)
 
-- `scrub_environment(environ)` removes J.A.R.V.I.S. secret variables
+- `scrub_environment(environ)` removes Great Sage secret variables
   (`GREATSAGE_*_KEY`, `*_TOKEN`, `*_SECRET`, `*_PASSWORD`, `.env` markers) from
   the environment tools see. Secret-shaped keys are matched with a
   case-insensitive marker check (including plural forms like `credentials`).
@@ -159,7 +159,7 @@ the request is denied — a fail-closed default.
 | `filesystem.write` | medium | atomic write (or non-atomic with `atomic=false`), content capped, parent required |
 | `process.list` | safe | running processes via `tasklist` |
 | `process.info` | safe | single-process state by pid (read-only) |
-| `system.info` | safe | OS/CPU/RAM/storage/GPU/JARVIS version (read-only) |
+| `system.info` | safe | OS/CPU/RAM/storage/GPU/Great Sage version (read-only) |
 | `shell.execute` | high* | run a command with explicit argv; `*` final risk after classifier |
 
 ## 7b. Built-in Tools (roadmap additions)
@@ -167,11 +167,14 @@ the request is denied — a fail-closed default.
 | Tool | Risk | Purpose |
 |---|---|---|
 | `network.fetch` | medium | bounded read-only HTTP(S) GET; text only, no credentials, binary refused |
+| `network.webfetch` | medium | fetch a page and return readable content (`markdown`/`text`, stdlib HTML extraction, download+char caps, secrets redacted) |
 | `homeassistant.states` | low | read entity states (needs `HA_BASE_URL` + `HA_TOKEN` env) |
 | `homeassistant.call` | high | invoke a service — acts on the home, always ASK-gated |
 | `gui.screenshot` | medium | capture primary monitor; metadata unless saved inside allowed roots |
 | `gui.click` | high | click at coordinates (Windows-only, always ASK-gated) |
 | `gui.type` | high | type into focused window, capped (Windows-only, always ASK-gated) |
+| `voice.listen`/`speak`/`wake` | safe | transcription, synthesis, wake-word check (bounded, metadata-only outputs) |
+| `vision.capture`/`describe` | safe | bounded screen frame + local VLM grounding (metadata + regions, never pixels) |
 
 Game-automation note: the `gui.*` tools are hands, not a player. Botting
 violates most games' terms (Supercell bans CoC botting accounts), so
@@ -254,6 +257,7 @@ inside a tool becomes a failed result with `error`, never a crashed process.
 The AI tool-calling loop (model chooses tools from `AIRequest.tools`) shipped
 as Phase 5A (`docs/AGENTS.md`) and OpenCode delegation of tool calls shipped
 as Phase 5B (`greatsage/delegation/`). Network tools (`network.fetch`,
-`homeassistant.*`) and GUI tools (`gui.*`) shipped as roadmap additions
-(§7b); the `browser` category remains reserved. Deleting files and killing
-processes are intentionally impossible through the tool system.
+`network.webfetch`, `homeassistant.*`) and GUI tools (`gui.*`) shipped as
+roadmap additions (§7b); the `browser` category remains reserved. Deleting
+files and killing processes are intentionally impossible through the tool
+system.

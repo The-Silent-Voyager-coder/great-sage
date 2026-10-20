@@ -42,7 +42,7 @@ def test_bridge_allowlists() -> None:
     assert HELP_TEXT in (bridge.handle(7, "/help") or "")
     assert HELP_TEXT in (bridge.handle(7, "/start") or "")
     assert "unknown command" in (bridge.handle(7, "/nuke") or "")
-    assert bridge.handle(7, "/briefing@jarvis_bot extra") == "all good"
+    assert bridge.handle(7, "/briefing@sage_bot extra") == "all good"
 
 
 def test_extract_message() -> None:

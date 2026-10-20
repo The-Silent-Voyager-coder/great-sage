@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable
 
 from greatsage.agent.cancellation import CancellationToken
+from greatsage.tools.approval import ApprovalProvider
 from greatsage.tools.models import ApprovalOutcome, Tool, ToolRequest
 
 log = logging.getLogger("greatsage.agent.approval")
@@ -50,22 +51,28 @@ class AgentApprovalProvider:
         with self._lock:
             event = self._events.setdefault(request.request_id, threading.Event())
         deadline = time.monotonic() + self._wait_seconds
-        while True:
-            if self._cancel_token is not None and self._cancel_token.cancelled:
-                return ApprovalOutcome.DENIED
+        try:
+            while True:
+                if self._cancel_token is not None and self._cancel_token.cancelled:
+                    return ApprovalOutcome.DENIED
+                with self._lock:
+                    decision = self._decisions.get(request.request_id)
+                if decision is not None:
+                    return self._take_decision(request.request_id)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    log.warning(
+                        "agent approval wait expired for %s (denied)",
+                        request.request_id,
+                        extra={"component": "agent"},
+                    )
+                    return ApprovalOutcome.DENIED
+                event.wait(timeout=min(0.05, remaining))
+        finally:
             with self._lock:
-                decision = self._decisions.get(request.request_id)
-            if decision is not None:
-                return self._take_decision(request.request_id)
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                log.warning(
-                    "agent approval wait expired for %s (denied)",
-                    request.request_id,
-                    extra={"component": "agent"},
-                )
-                return ApprovalOutcome.DENIED
-            event.wait(timeout=min(0.05, remaining))
+                # This request is no longer waiting: drop its wait handle so
+                # `has_pending` reflects only outstanding work.
+                self._events.pop(request.request_id, None)
 
     def approve(self, request_id: str) -> None:
         self._decide(request_id, ApprovalOutcome.APPROVED)
@@ -74,6 +81,7 @@ class AgentApprovalProvider:
         self._decide(request_id, ApprovalOutcome.DENIED)
 
     def has_pending(self) -> bool:
+        """True while a request is waiting or a recorded decision is unconsumed."""
         with self._lock:
             return bool(self._decisions) or bool(self._events)
 
@@ -87,3 +95,34 @@ class AgentApprovalProvider:
     def _take_decision(self, request_id: str) -> ApprovalOutcome:
         with self._lock:
             return self._decisions.pop(request_id, ApprovalOutcome.DENIED)
+
+
+class NotifyingApprovalProvider:
+    """Wrap any approval provider and observe every pending request.
+
+    ``AgentService`` uses this to keep its run status in
+    ``WAITING_FOR_APPROVAL`` even when the caller supplies a custom provider
+    (for example the CLI's broker or a UI-backed provider).
+    """
+
+    def __init__(
+        self,
+        inner: ApprovalProvider,
+        on_pending: PendingCallback | None = None,
+    ) -> None:
+        self._inner = inner
+        self._on_pending = on_pending
+
+    def request_approval(
+        self, request: ToolRequest, tool: Tool, reason: str
+    ) -> ApprovalOutcome:
+        if self._on_pending is not None:
+            try:
+                self._on_pending(request)
+            except Exception as exc:
+                log.warning(
+                    "approval pending callback failed: %s",
+                    exc,
+                    extra={"component": "agent"},
+                )
+        return self._inner.request_approval(request, tool, reason)

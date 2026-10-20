@@ -1,4 +1,4 @@
-"""Telegram bridge (remote chat with J.A.R.V.I.S.).
+"""Telegram bridge (remote chat with Great Sage).
 
 The laptop stays home and online; the operator messages a Telegram bot from
 anywhere with internet. Standard library only (Bot HTTP API via urllib).

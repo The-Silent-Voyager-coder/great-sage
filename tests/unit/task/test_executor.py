@@ -18,7 +18,7 @@ from greatsage.tools.service import ToolService
 
 def make_config(tmp_path: Path) -> object:
     d = str(tmp_path).replace("\\", "/")
-    p = tmp_path / "jarvis.yaml"
+    p = tmp_path / "sage.yaml"
     p.write_text(
         f"""
 core:
@@ -109,6 +109,45 @@ def test_executor_happy_path(tmp_path: Path) -> None:
     assert report.completed_steps == 3
     assert report.failed_steps == 0
     assert (tmp_path / "workspace" / "out.txt").exists()
+    repo.close()
+    tools.shutdown()
+
+
+def test_executor_resume_retries_failed_step(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / "existing.txt").write_text("hello", encoding="utf-8")
+    cfg = make_config(tmp_path)
+    tools = make_tools(tmp_path, DeterministicApprovalProvider(ApprovalOutcome.APPROVED))
+    repo = SqliteTaskRepository(cfg.task.database_path)
+    repo.initialize()
+    executor = TaskExecutor(tools=tools, repository=repo)
+    steps = (
+        Step(sequence=1, description="list", tool_id="filesystem.list", arguments={"path": str(workspace)}, risk_estimate="low", acceptance_criteria="ok"),
+        Step(sequence=2, description="read missing", tool_id="filesystem.read", arguments={"path": str(workspace / "later.txt")}, risk_estimate="low", acceptance_criteria="ok"),
+        Step(sequence=3, description="write", tool_id="filesystem.write", arguments={"path": str(workspace / "out.txt"), "content": "resumed"}, risk_estimate="medium", acceptance_criteria="ok"),
+    )
+    plan = Plan(goal="resume failure", workspace_root=workspace, steps=steps)
+    task = TaskRecord(id="t_resume", plan_id=plan.id, goal=plan.goal, state=TaskState.PENDING, total_steps=3)
+    repo.create_task(task)
+
+    first = executor.execute(plan, task, per_step_timeout=30.0, total_timeout=600.0)
+    assert first.state == TaskState.FAILED
+    assert first.completed_steps == 1
+    assert first.failed_steps == 1
+    assert not (workspace / "out.txt").exists()
+
+    (workspace / "later.txt").write_text("now present", encoding="utf-8")
+    second = executor.execute(plan, task, per_step_timeout=30.0, total_timeout=600.0)
+
+    assert second.state == TaskState.COMPLETED
+    assert second.completed_steps == 3
+    assert second.failed_steps == 0
+    assert [r.sequence for r in second.step_results] == [1, 2, 3]
+    assert (workspace / "out.txt").read_text(encoding="utf-8") == "resumed"
+    stored = repo.get_step_results("t_resume")
+    assert [r.sequence for r in stored] == [1, 2, 3]
+    assert all(r.success for r in stored)
     repo.close()
     tools.shutdown()
 

@@ -1,8 +1,8 @@
 """Provider-neutral memory models.
 
-Phase 3 establishes the four memory categories, the typed Memory entry,
-retrieval filters, and the deterministic ranking result. No embeddings, no
-LLM extraction, no vector search — those belong to a later semantic phase.
+The four memory categories, the typed Memory entry, retrieval filters, and
+the deterministic ranking result. Embeddings live in `embeddings.py` +
+`service.py` (roadmap B); no LLM extraction.
 """
 
 from __future__ import annotations

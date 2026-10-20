@@ -1,6 +1,6 @@
 """Typed configuration model.
 
-Mirrors config/jarvis.example.yaml, the Phase 0 source of truth.
+Mirrors config/sage.example.yaml, the Phase 0 source of truth.
 All records are immutable: values are validated before construction.
 """
 
@@ -86,6 +86,7 @@ class OpenCodeProviderConfig:
     enabled: bool
     base_url: str
     api_key_env: str
+    username_env: str
     model: str
     timeout_seconds: float
 
@@ -194,7 +195,7 @@ class AgentConfig:
     """Agent-loop settings (Phase 5A bounded tool calling).
 
     Limits are validated against absolute safety ceilings at load time
-    (jarvis.agent.limits); the orchestrator re-validates every run.
+    (greatsage.agent.limits); the orchestrator re-validates every run.
     """
 
     enabled: bool
@@ -211,7 +212,7 @@ class DelegationConfig:
     """Delegation settings (Phase 5B controlled OpenCode execution).
 
     Limits are validated against absolute safety ceilings at load time
-    (jarvis.delegation.limits); the manager re-validates every run.
+    (sage.delegation.limits); the manager re-validates every run.
     """
 
     enabled: bool
@@ -259,9 +260,8 @@ class VoiceConfig:
 
 
 @dataclass(frozen=True)
-class JarvisConfig:
+class SageConfig:
     """Root immutable configuration object."""
-
     core: CoreConfig
     logging: LoggingConfig
     events: EventsConfig
@@ -278,3 +278,7 @@ class JarvisConfig:
     telegram: TelegramConfig
     security: SecurityConfig
     voice: VoiceConfig
+
+
+# Previous-generation alias (past life: Jarvis). New code must use SageConfig.
+JarvisConfig = SageConfig

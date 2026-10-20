@@ -36,7 +36,7 @@ def write_config(tmp_path: Path) -> Path:
     path.write_text(
         f"""
 core:
-  name: "J.A.R.V.I.S. Voice Tools Test"
+  name: "Great Sage Voice Tools Test"
   data_dir: "{d}/data"
   cache_dir: "{d}/cache"
   logs_dir: "{d}/logs"
@@ -193,7 +193,8 @@ def test_policy_denies_speak_outside_roots(tmp_path: Path) -> None:
 def test_service_pipeline_executes_voice_listen(tmp_path: Path) -> None:
     service = ToolService()
     service.start(load_config(str(write_config(tmp_path))).config)
-    register_voice_tools(service.registry())
+    # Voice tools are registered by ToolService.start (Phase 6 wiring).
+    assert "voice.listen" in service.registry().list_ids()
     request = ToolRequest(
         request_id=uuid.uuid4().hex,
         tool_id="voice.listen",
@@ -207,7 +208,7 @@ def test_service_pipeline_executes_voice_listen(tmp_path: Path) -> None:
 def test_pipeline_denies_outside_roots(tmp_path: Path) -> None:
     service = ToolService()
     service.start(load_config(str(write_config(tmp_path))).config)
-    register_voice_tools(service.registry())
+    assert "voice.speak" in service.registry().list_ids()
     service.approval = DeterministicApprovalProvider(ApprovalOutcome.APPROVED)
     request = ToolRequest(
         request_id=uuid.uuid4().hex,

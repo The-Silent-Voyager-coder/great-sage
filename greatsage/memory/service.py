@@ -15,10 +15,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.events.models import (
     MEMORY_CREATED,
@@ -68,6 +68,46 @@ DAY_SECONDS = 86400.0
 _MISSING: Any = object()
 
 
+def _matches_filters(memory: Memory, filters: MemoryFilter, now: datetime) -> bool:
+    """Mirror the repository's filter semantics for the semantic path.
+
+    The vector index has no SQL filters, so the same predicates are applied
+    in Python; anything that differed here would make `--semantic` return
+    rows the text search would never show (or hide rows it would).
+    """
+    if filters.memory_type is not None and memory.memory_type != filters.memory_type:
+        return False
+    if filters.source is not None and memory.source != filters.source:
+        return False
+    if filters.provenance is not None and memory.provenance != filters.provenance:
+        return False
+    if filters.created_after is not None and memory.created_at <= filters.created_after:
+        return False
+    if filters.created_before is not None and memory.created_at >= filters.created_before:
+        return False
+    if filters.expires_before is not None and (
+        memory.expires_at is None or memory.expires_at >= filters.expires_before
+    ):
+        return False
+    if filters.minimum_confidence is not None and float(memory.confidence) < float(
+        filters.minimum_confidence
+    ):
+        return False
+    if not filters.include_deleted and memory.deleted_at is not None:
+        return False
+    if (
+        not filters.include_expired
+        and memory.expires_at is not None
+        and memory.expires_at <= now
+    ):
+        return False
+    if filters.session_id is not None and not (
+        memory.session_id is None or memory.session_id == filters.session_id
+    ):
+        return False
+    return True
+
+
 class MemoryService:
     """Facade over the repository and working memory (owned by the runtime)."""
 
@@ -81,11 +121,11 @@ class MemoryService:
         self.publisher: Any = None  # callable(event) -> None, wired by runtime
         self.availability: str = "unavailable"  # disabled | healthy | unavailable
         self.detail: str = "memory service not started"
-        self._config: JarvisConfig | None = None
+        self._config: SageConfig | None = None
 
     # --- lifecycle -----------------------------------------------------
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         """Initialize the repository from config; failures never raise.
 
         A missing/corrupt/unwritable database leaves the service in
@@ -211,7 +251,7 @@ class MemoryService:
         metadata: Mapping[str, Any] | None = None,
         session_id: str | None = None,
     ) -> Memory:
-        """Record an episode (J.A.R.V.I.S. action/event) — EPISODIC memory."""
+        """Record an episode (Great Sage action/event) — EPISODIC memory."""
         extra = dict(metadata or {})
         if action:
             extra["action"] = action
@@ -629,9 +669,7 @@ class MemoryService:
             )
             if memory is None:
                 continue
-            if filters.memory_type is not None and memory.memory_type != filters.memory_type:
-                continue
-            if filters.session_id is not None and memory.session_id != filters.session_id:
+            if not _matches_filters(memory, filters, now):
                 continue
             age_seconds = max((now - memory.created_at).total_seconds(), 0.0)
             recency = 1.0 / (1.0 + age_seconds / DAY_SECONDS)

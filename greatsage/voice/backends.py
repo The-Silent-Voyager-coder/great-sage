@@ -1,5 +1,11 @@
 """Backend factories: config engine names -> managers (real or mock).
 
+Real engines: `vosk` (STT), `piper` (TTS), `fuzzy`/`keyword` wake matchers.
+Placeholder engines: `mock` (deterministic), and the legacy `offline`
+names — for STT it maps to the unavailable faster-whisper placeholder, for
+TTS to the unavailable OfflineTTSBackend placeholder; both report
+unavailable with an explicit reason (never a silent mock substitute).
+
 Unknown engine names raise VoiceValidationError (explicit, never a silent
 fallback). Missing packages or model files do NOT raise here — the backend
 reports unavailable and the health detail names exactly what is missing.
@@ -9,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.exceptions import VoiceValidationError
 from greatsage.voice.limits import VoiceLimits
 from greatsage.voice.stt import (
@@ -41,7 +47,7 @@ def piper_voice_paths(models_dir: Path, voice: str) -> tuple[Path, Path | None]:
     return onnx, config if config.is_file() else None
 
 
-def build_stt_manager(config: JarvisConfig, limits: VoiceLimits) -> STTManager:
+def build_stt_manager(config: SageConfig, limits: VoiceLimits) -> STTManager:
     engine = config.voice.stt.engine.strip().lower()
     if engine == "mock":
         return STTManager(limits, MockSTTBackend())
@@ -53,7 +59,7 @@ def build_stt_manager(config: JarvisConfig, limits: VoiceLimits) -> STTManager:
     raise VoiceValidationError(f"unknown STT engine: {config.voice.stt.engine!r}")
 
 
-def build_tts_manager(config: JarvisConfig, limits: VoiceLimits) -> TTSManager:
+def build_tts_manager(config: SageConfig, limits: VoiceLimits) -> TTSManager:
     engine = config.voice.tts.engine.strip().lower()
     if engine == "mock":
         return TTSManager(limits, MockTTSBackend())
@@ -67,7 +73,7 @@ def build_tts_manager(config: JarvisConfig, limits: VoiceLimits) -> TTSManager:
     raise VoiceValidationError(f"unknown TTS engine: {config.voice.tts.engine!r}")
 
 
-def build_wake_detector(config: JarvisConfig, limits: VoiceLimits) -> WakeWordDetector:
+def build_wake_detector(config: SageConfig, limits: VoiceLimits) -> WakeWordDetector:
     model = config.voice.wake_word.model.strip().lower()
     keyword = limits.wake_keyword
     if model in ("keyword", "mock"):

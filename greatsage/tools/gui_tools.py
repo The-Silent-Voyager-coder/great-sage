@@ -37,8 +37,12 @@ def _windows_only(tool_id: str) -> ToolResult | None:
     return None
 
 
-def _capture_bmp() -> tuple[int, int, bytes]:
-    """Capture the primary monitor; returns (width, height, BMP file bytes)."""
+def capture_primary_monitor_bmp() -> tuple[int, int, bytes]:
+    """Capture the primary monitor; returns (width, height, BMP file bytes).
+
+    Public helper shared by `gui.screenshot` and the vision GDI capture
+    backend (same proven ctypes path, no duplication).
+    """
     user32 = ctypes.windll.user32
     gdi32 = ctypes.windll.gdi32
     width = user32.GetSystemMetrics(0)
@@ -159,7 +163,7 @@ class GuiScreenshotTool(BaseTool):
             return ToolResult(request_id="", tool_id=self.id, success=False,
                               error="gui.screenshot out must be a non-empty path")
         try:
-            width, height, bmp = _capture_bmp()
+            width, height, bmp = capture_primary_monitor_bmp()
         except OSError as exc:
             return ToolResult(request_id="", tool_id=self.id, success=False,
                               error=f"gui.screenshot capture failed: {exc}")

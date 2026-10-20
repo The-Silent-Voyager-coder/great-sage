@@ -95,10 +95,9 @@ class FasterWhisperSTTBackend(MockSTTBackend):
     backend = VoiceBackend.OFFLINE
 
     def is_available(self) -> bool:
-        import importlib.util
-
-        if importlib.util.find_spec("faster_whisper") is None:
-            return False
+        # No reliable Windows/py3.13 wheels for faster-whisper; the backend is
+        # accepted by config validation but can never report available
+        # (docs/DEPENDENCY_POLICY.md). Use `vosk` for real transcription.
         return False
 
 

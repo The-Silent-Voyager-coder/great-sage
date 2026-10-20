@@ -1,4 +1,4 @@
-"""J.A.R.V.I.S. secure tool subsystem (Phase 4).
+"""Great Sage secure tool subsystem (Phase 4).
 
 Provider-independent tool abstraction: registry, typed requests/results,
 JSON-mappable schemas, risk levels, security policy with ALLOW/DENY/ASK

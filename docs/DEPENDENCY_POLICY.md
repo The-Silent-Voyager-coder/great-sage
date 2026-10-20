@@ -32,7 +32,7 @@ offline/local. Candidate evaluation checklist:
 - [ ] permissive/OSI license compatible with local use
 - [ ] Windows support
 - [ ] no telemetry that requires consent-blind collection; nothing sends data
-  without explicit user opt-in through JARVIS config
+  without explicit user opt-in through Great Sage config
 
 ## 3. Locking & Vendoring
 
@@ -43,11 +43,14 @@ offline/local. Candidate evaluation checklist:
 
 ## 4. STT/TTS/Model Runtime Boundaries
 
-Voice model binaries (faster-whisper, Piper, ONNX wake-word models) are
+Voice model binaries (faster-whisper, Piper, ONNX wake-word models) and the
+vision grounding model (`moondream` via Ollama) are
 **runtime assets**, not Python dependencies. They live under `C:\GREATSAGE\models\`
-(config-overridable) and are downloaded on demand by an explicit user action —
+(config-overridable; Ollama-managed models live in Ollama's own store) and
+are downloaded on demand by an explicit user action —
 never silently, and never from non-official sources. Each engine remains
-swappable behind the voice pipeline interfaces (`docs/ARCHITECTURE.md` §4).
+swappable behind the voice/vision pipeline interfaces
+(`docs/ARCHITECTURE.md` §4).
 
 ## 5. Approved Dependencies
 

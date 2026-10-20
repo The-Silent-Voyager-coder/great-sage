@@ -4,7 +4,7 @@ Phase 6 turns are bounded in audio bytes, text length, listen duration,
 synthesis length, and per-session turn count. Overrides below the
 defaults are honored; anything above a ceiling is clamped down to it
 (the smaller limit wins — a runtime invariant, mirroring
-jarvis.agent.limits and jarvis.vision.limits).
+greatsage.agent.limits and greatsage.vision.limits).
 """
 
 from __future__ import annotations
@@ -30,6 +30,10 @@ WAKE_KEYWORD_DEFAULT = "great sage"
 MAX_WAKE_TEXT_CHARS_DEFAULT = 500
 MAX_WAKE_TEXT_CHARS_CEILING = 4000
 
+#: Synthesis wall-clock budget (piper on CPU is slow; separate from listen).
+SYNTH_TIMEOUT_SECONDS_DEFAULT = 30.0
+SYNTH_TIMEOUT_SECONDS_CEILING = 300.0
+
 
 @dataclass(frozen=True)
 class VoiceLimits:
@@ -42,6 +46,7 @@ class VoiceLimits:
     max_turns_per_session: int = MAX_TURNS_PER_SESSION_DEFAULT
     wake_keyword: str = WAKE_KEYWORD_DEFAULT
     max_wake_text_chars: int = MAX_WAKE_TEXT_CHARS_DEFAULT
+    synth_timeout_seconds: float = SYNTH_TIMEOUT_SECONDS_DEFAULT
 
 
 def default_limits() -> VoiceLimits:
@@ -58,6 +63,7 @@ def resolve_limits(
     max_turns_per_session: int | None = None,
     wake_keyword: str | None = None,
     max_wake_text_chars: int | None = None,
+    synth_timeout_seconds: float | None = None,
 ) -> VoiceLimits:
     """Resolve overrides against ceilings; the smaller limit always wins."""
     defaults = default_limits()
@@ -95,5 +101,11 @@ def resolve_limits(
             if max_wake_text_chars is not None
             else defaults.max_wake_text_chars,
             MAX_WAKE_TEXT_CHARS_CEILING,
+        ),
+        synth_timeout_seconds=min(
+            synth_timeout_seconds
+            if synth_timeout_seconds is not None
+            else defaults.synth_timeout_seconds,
+            SYNTH_TIMEOUT_SECONDS_CEILING,
         ),
     )

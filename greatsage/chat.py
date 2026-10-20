@@ -1,8 +1,12 @@
-"""Conversational chat loop — voice or text mode.
+"""Conversational chat loop — voice, text, or always-on mode.
 
-Voice mode:  record from mic -> transcribe (Vosk) -> generate (LLM) ->
-              speak (Piper) -> play audio -> repeat.
-Text mode:   type input -> generate (LLM) -> print response -> repeat.
+Voice mode:        record from mic -> transcribe (Vosk) -> generate (LLM) ->
+                   speak (Piper) -> play audio -> repeat.
+Always-on mode:    wake-gated conversation loop with barge-in
+                   (`greatsage/voice/always_on.py`): idle in wake mode,
+                   enter conversation on the wake word, interrupt playback
+                   when spoken over, return to wake mode after idle turns.
+Text mode:         type input -> generate (LLM) -> print response -> repeat.
 
 No new config section: reuses voice.* and ai.* from the existing config.
 Events carry ids/lengths only, never audio bytes or transcript content.
@@ -12,11 +16,12 @@ from __future__ import annotations
 
 import logging
 import struct
+import threading
 import time
 import uuid
 
-from greatsage.configuration.model import JarvisConfig
-from greatsage.exceptions import JarvisError, VoiceValidationError
+from greatsage.configuration.model import SageConfig
+from greatsage.exceptions import SageError, VoiceValidationError
 from greatsage.intelligence.models import AIRequest, Message
 from greatsage.intelligence.service import IntelligenceService
 from greatsage.voice.service import VoiceService
@@ -89,19 +94,6 @@ def _resample_mono(pcm: bytes, src_rate: int, src_ch: int) -> bytes:
     return out.astype(np.int16).tobytes()
 
 
-def _record_chunk(device: int | None = None) -> bytes:
-    """Record one chunk of audio from the microphone. Returns raw PCM bytes."""
-    import sounddevice as sd
-
-    frames = int(SAMPLE_RATE * CHUNK_SECONDS)
-    kwargs: dict = {"samplerate": SAMPLE_RATE, "channels": CHANNELS, "dtype": "int16"}
-    if device is not None:
-        kwargs["device"] = device
-    audio = sd.rec(frames, **kwargs)
-    sd.wait()
-    return audio.tobytes()
-
-
 def _rms(data: bytes) -> float:
     """Compute root-mean-square of 16-bit PCM audio."""
     if len(data) < 2:
@@ -109,6 +101,87 @@ def _rms(data: bytes) -> float:
     count = len(data) // 2
     samples = struct.unpack(f"<{count}h", data[: count * 2])
     return (sum(s * s for s in samples) / count) ** 0.5
+
+
+def _strip_wake(text: str, keyword: str) -> str:
+    """Remove the wake phrase (keyword or alias) from a transcript.
+
+    Returns the remainder, or an empty string when only a fuzzy match
+    occurred (no exact substring to strip — the operator repeats the
+    command naturally).
+    """
+    from greatsage.voice.wakeword import WAKE_ALIASES
+
+    lowered = text.lower()
+    candidates = sorted({keyword.strip().lower(), *WAKE_ALIASES}, key=len, reverse=True)
+    for candidate in candidates:
+        if candidate and candidate in lowered:
+            index = lowered.index(candidate)
+            return (text[:index] + text[index + len(candidate) :]).strip(" ,.!?;:-")
+    return ""
+
+
+class _MicBargeMonitor:
+    """Sustained-speech detector used for barge-in during playback.
+
+    Polls the microphone in short blocks on a worker thread; flags a hit
+    once `blocks_needed` consecutive blocks exceed the silence threshold.
+    Failures degrade silently (no barge-in, never a crash).
+    """
+
+    def __init__(
+        self,
+        device: int | None = None,
+        *,
+        threshold: float = SILENCE_THRESHOLD,
+        blocks_needed: int = 3,
+    ) -> None:
+        self._device = device
+        self._threshold = threshold
+        self._blocks_needed = max(1, blocks_needed)
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._hit = False
+
+    def start(self) -> None:
+        self._stop.clear()
+        self._hit = False
+        self._thread = threading.Thread(target=self._poll, name="greatsage-barge", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+            self._thread = None
+
+    def detected(self) -> bool:
+        return self._hit
+
+    def _poll(self) -> None:
+        try:
+            import sounddevice as sd
+
+            native_rate, native_ch = _native_rate(self._device)
+            block = max(1, int(native_rate * CHUNK_SECONDS))
+            with sd.InputStream(
+                samplerate=native_rate,
+                channels=native_ch,
+                dtype="int16",
+                device=self._device,
+                blocksize=block,
+            ) as stream:
+                streak = 0
+                while not self._stop.is_set():
+                    data, _overflowed = stream.read(block)
+                    if _rms(data.tobytes()) >= self._threshold:
+                        streak += 1
+                        if streak >= self._blocks_needed:
+                            self._hit = True
+                    else:
+                        streak = 0
+        except Exception as exc:  # barge-in is best-effort
+            log.debug("barge monitor unavailable: %s", exc)
 
 
 def record_from_mic(device: int | None = None) -> bytes | None:
@@ -285,17 +358,18 @@ def _amplify_wav(wav: bytes) -> bytes:
 
 
 class ChatSession:
-    """Manages a conversational chat loop (voice or text mode)."""
+    """Manages a conversational chat loop (voice, text, or always-on)."""
 
     def __init__(
         self,
-        config: JarvisConfig,
+        config: SageConfig,
         intelligence: IntelligenceService,
         *,
         voice: VoiceService | None = None,
         text_mode: bool = False,
         device: int | None = None,
         provider: str | None = None,
+        always_on: bool = False,
     ) -> None:
         self._config = config
         self._intelligence = intelligence
@@ -303,6 +377,7 @@ class ChatSession:
         self._text_mode = text_mode
         self._device = device
         self._provider = provider
+        self._always_on = always_on
         self._history: list[Message] = [Message.system(SYSTEM_PROMPT)]
         self._session_id = f"chat_{uuid.uuid4().hex[:12]}"
         self._turn = 0
@@ -313,7 +388,9 @@ class ChatSession:
     def _generate(self, user_text: str) -> str | None:
         """Send user text to the LLM and return the reply, or None on error."""
         self._history.append(Message.user(user_text))
-        meta: dict = {"source": "chat", "session_id": self._session_id}
+        # `think=False` keeps interactive replies snappy on thinking models
+        # (Spark-X2.5, qwen3); providers with no thinking mode ignore it.
+        meta: dict = {"source": "chat", "session_id": self._session_id, "think": False}
         if self._provider:
             meta["provider"] = self._provider
         request = AIRequest(
@@ -323,7 +400,7 @@ class ChatSession:
         )
         try:
             response = self._intelligence.generate(request)
-        except JarvisError as exc:
+        except SageError as exc:
             print(f"  (generation failed: {exc})")
             self._history.pop()
             return None
@@ -357,6 +434,12 @@ class ChatSession:
         try:
             transcript = self._voice.listen(audio=wav_bytes, session_id=self._session_id)
         except VoiceValidationError as exc:
+            if "budget" in str(exc):
+                # Voice session budget exhausted: keep the conversation alive
+                # by degrading to text input instead of failing every turn.
+                print(f"  ({exc} — switching to text input; type 'exit' to quit)")
+                self._text_mode = True
+                return True
             print(f"  (transcription failed: {exc})")
             return True
 
@@ -413,8 +496,99 @@ class ChatSession:
 
         return True
 
+    def _run_always_on(self) -> None:
+        """Wake-gated conversation loop with barge-in (gate 2).
+
+        Reuses the real mic recording, VoiceService STT/TTS, and
+        IntelligenceService; the loop logic itself lives in
+        `greatsage.voice.always_on` (injectable and offline-tested).
+        """
+        from greatsage.voice.always_on import AlwaysOnVoiceLoop, LoopMode, StopLoop
+
+        voice = self._voice
+        assert voice is not None, "always-on mode requires a voice service"
+        monitor = _MicBargeMonitor(device=self._device)
+        print("  always-on: say the wake word to start; 'exit' ends the session")
+
+        def listen() -> str | None:
+            wav = record_from_mic(device=self._device)
+            if wav is None:
+                return None
+            wav = _amplify_wav(wav)
+            try:
+                transcript = voice.listen(audio=wav, session_id=self._session_id)
+            except VoiceValidationError as exc:
+                message = str(exc)
+                if "budget" in message:
+                    print(f"  ({message})")
+                    raise StopLoop(message) from exc
+                print(f"  (transcription failed: {message})")
+                return None
+            text = transcript.text.strip()
+            return text or None
+
+        def wake_check(text: str) -> tuple[bool, str]:
+            result = voice.detect_wake(text)
+            if not result.detected:
+                return (False, "")
+            return (True, _strip_wake(text, result.keyword))
+
+        def reply(text: str) -> str | None:
+            print(f"  you: {text}")
+            answer = self._generate(text)
+            if answer:
+                print(f"  great sage: {answer}")
+                self._trim_history()
+            return answer
+
+        def speak(text: str) -> None:
+            audio_file = self._chat_dir / f"turn_{self._turn:04d}.wav"
+            self._turn += 1
+            voice.speak(text, session_id=self._session_id, output_path=str(audio_file))
+            monitor.start()
+            try:
+                if audio_file.is_file():
+                    play_audio(audio_file.read_bytes())
+            finally:
+                monitor.stop()
+
+        def stop_playback() -> None:
+            import sounddevice as sd
+
+            sd.stop()
+
+        def on_mode(mode: LoopMode) -> None:
+            if mode is LoopMode.WAKE:
+                print("  (wake mode — say the wake word)")
+            elif mode is LoopMode.CONVERSING:
+                print("  (listening)")
+
+        loop = AlwaysOnVoiceLoop(
+            listen=listen,
+            wake_check=wake_check,
+            reply=reply,
+            speak=speak,
+            stop_playback=stop_playback,
+            barge_detected=monitor.detected,
+            is_exit=lambda text: text.lower().strip() in EXIT_COMMANDS,
+            on_mode=on_mode,
+            max_turns=max(1, MAX_TURNS - self._turn),
+        )
+        loop.run()
+
     def run(self) -> None:
         """Run the chat loop until exit."""
+        if self._always_on and not self._text_mode:
+            print("Great Sage Chat (always-on voice mode)")
+            print(f"  session: {self._session_id}")
+            print()
+            try:
+                self._run_always_on()
+            except KeyboardInterrupt:
+                print("\n  (session ended)")
+            print(f"\n  session {self._session_id} ended after {self._turn} turns")
+            return
+
         mode = "text" if self._text_mode else "voice"
         print(f"Great Sage Chat ({mode} mode)")
         print(f"  session: {self._session_id}")

@@ -166,10 +166,22 @@ def test_coerce_env_types() -> None:
     assert coerce_env("positive_int", "12") == 12
     assert coerce_env("positive_number", "1.5") == 1.5
     assert coerce_env("nonempty_str", "x") == "x"
+    assert coerce_env("int_list", "1, 2,3") == [1, 2, 3]
+    assert coerce_env("int_list", "") == []
     with pytest.raises(ValueError):
         coerce_env("bool", "perhaps")
     with pytest.raises(ValueError):
         coerce_env("positive_int", "abc")
+    with pytest.raises(ValueError):
+        coerce_env("int_list", "1,two")
+
+
+def test_apply_env_int_list_coercion() -> None:
+    # GREATSAGE_TELEGRAM__ALLOWED_CHAT_IDS must coerce to a real int list,
+    # not stay a raw string (why: telegram validation would reject the string).
+    raw = {"telegram": {"allowed_chat_ids": []}}
+    apply_env(raw, {"GREATSAGE_TELEGRAM__ALLOWED_CHAT_IDS": "111,222"})
+    assert raw["telegram"]["allowed_chat_ids"] == [111, 222]
 
 
 def test_apply_env_recognized_only() -> None:

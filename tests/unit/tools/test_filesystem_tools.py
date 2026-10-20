@@ -98,6 +98,16 @@ def test_read_truncates_to_limit(tmp_path: Path) -> None:
     assert len(result.output["content"]) == 100
 
 
+def test_read_rejects_non_positive_max_bytes(tmp_path: Path) -> None:
+    target = tmp_path / "big.txt"
+    target.write_text("x" * 1000)
+    for value in (0, -1, -1000):
+        with pytest.raises(ToolExecutionError, match="positive integer"):
+            FilesystemReadTool().execute(
+                {"path": str(target), "max_bytes": value}, make_context(tmp_path)
+            )
+
+
 def test_read_missing_raises(tmp_path: Path) -> None:
     with pytest.raises(ToolExecutionError, match="does not exist"):
         FilesystemReadTool().execute({"path": str(tmp_path / "nope")}, make_context(tmp_path))

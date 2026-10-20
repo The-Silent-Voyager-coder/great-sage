@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.events.models import PLAN_APPROVED, PLAN_CREATED, PLAN_FAILED, PLAN_VERIFIED, Event
 from greatsage.exceptions import PlanningUnavailableError, PlanningValidationError
@@ -20,14 +22,14 @@ log = logging.getLogger("greatsage.planning.service")
 
 class PlanningService:
     def __init__(self) -> None:
-        self._config: JarvisConfig | None = None
+        self._config: SageConfig | None = None
         self._repository: SqlitePlanningRepository | None = None
         self._planner: Planner | None = None
         self._availability: str = "unavailable"
         self._detail: str = "planning service not started"
         self.publisher: Any = None
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         self._config = config
         if config is None:
             self._availability = "unavailable"
@@ -117,9 +119,6 @@ class PlanningService:
         Only DRAFT plans can be approved; verification must pass first.
         Fails closed — no auto-approval, no silent state change.
         """
-        import dataclasses
-        from datetime import UTC, datetime
-
         self._require_available()
         assert self._repository is not None
         assert self._config is not None

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from greatsage.exceptions import PlanningValidationError
+from greatsage.planning.limits import MAX_PLAN_STEPS_CEILING
 
 
 class PlanStatus(StrEnum):
@@ -102,7 +103,7 @@ class Plan:
             raise PlanningValidationError("plan goal must not be empty")
         if not self.steps:
             raise PlanningValidationError("plan must have at least one step")
-        if len(self.steps) > 50:
+        if len(self.steps) > MAX_PLAN_STEPS_CEILING:
             raise PlanningValidationError("plan exceeds max steps")
         for step in self.steps:
             step.validate()

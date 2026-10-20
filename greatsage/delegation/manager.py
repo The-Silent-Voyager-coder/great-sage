@@ -1,10 +1,11 @@
 """DelegationManager (Phase 5B): controlled, bounded executor delegation.
 
-J.A.R.V.I.S. owns the delegation lifecycle end to end: it validates the
+Great Sage owns the delegation lifecycle end to end: it validates the
 request, chooses and gates the provider by capability, enforces the working
-directory through JARVIS path security, routes every executor permission
-request through the JARVIS SecurityPolicy and Phase 4 approval provider,
-monitors the event stream (bounded reconnection, no infinite loops), enforces
+directory through Great Sage path security, routes every executor permission
+request through the Great Sage SecurityPolicy and Phase 4 approval provider,
+monitors the executor in bounded poll sweeps (paused by the poll interval,
+with bounded reconnects, no infinite loops), enforces
 limits (wall time, output bytes, permission count, session count, depth),
 aborts and cleans up on cancellation/timeout/limits, and publishes the
 Delegation* + TOOL_* audit events. The executor only carries out the work.
@@ -24,8 +25,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
-from greatsage.configuration.model import JarvisConfig
-from greatsage.delegation.limits import SSE_RECONNECT_LIMIT
+from greatsage.configuration.model import SageConfig
+from greatsage.delegation.limits import POLL_INTERVAL_SECONDS, RECONNECT_LIMIT
 from greatsage.delegation.models import (
     DelegationEvent,
     DelegationEventKind,
@@ -136,7 +137,16 @@ class DelegationProvider(Protocol):
         working_directory: str | None = None,
     ) -> None: ...
 
-    def iter_session_events(self, session_id: str) -> Iterator[DelegationEvent]: ...
+    def iter_session_events(self, session_id: str) -> Iterator[DelegationEvent]:
+        """One bounded sweep of executor events for a session.
+
+        Poll-based providers return after a single bounded sweep (yielding
+        zero or more events; a heartbeat NOTE is allowed while quiet).
+        Stream-based providers read one bounded window of their stream.
+        Transport failures raise so the manager can apply its bounded
+        reconnect policy.
+        """
+        ...
 
     def respond_permission(
         self,
@@ -155,7 +165,7 @@ class DelegationProvider(Protocol):
 
 @dataclass
 class _SyntheticTool:
-    """A minimal Tool-shaped object for JARVIS SecurityPolicy evaluation."""
+    """A minimal Tool-shaped object for Great Sage SecurityPolicy evaluation."""
 
     id: str
     name: str
@@ -191,7 +201,7 @@ class DelegationManager:
     def __init__(
         self,
         *,
-        config: JarvisConfig,
+        config: SageConfig,
         registry: ProviderRegistry,
         policy: SecurityPolicy | None = None,
         publisher: Any = None,
@@ -201,6 +211,8 @@ class DelegationManager:
         self._policy = policy or SecurityPolicy.from_config(config)
         self.publisher = publisher
         self.approval: Any = None  # Phase 4 ApprovalProvider; synced by the service
+        #: Pause between executor event sweeps (seconds). Tests may set 0.0.
+        self.poll_interval_seconds: float = POLL_INTERVAL_SECONDS
         self._running: dict[str, _RunningDelegation] = {}
         self._results: dict[str, DelegationResult] = {}
         self._lock = threading.RLock()
@@ -210,7 +222,7 @@ class DelegationManager:
     def delegate(self, request: DelegationRequest) -> DelegationResult:
         """Run one controlled delegation to a terminal state (blocks).
 
-        J.A.R.V.I.S.-enforced limits, permission routing, path security,
+        Great Sage-enforced limits, permission routing, path security,
         cancellation, timeout, and cleanup cover the whole run.
         """
         request.validate()
@@ -375,7 +387,7 @@ class DelegationManager:
                 f"working directory {canonical} targets a protected path"
             )
         if is_within(canonical, base):
-            return canonical  # the configured JARVIS workspace — allowed
+            return canonical  # the configured Great Sage workspace — allowed
         if any(is_within(canonical, root) for root in allowed_roots):
             return canonical  # inside an explicit allowed root — allowed
         # Outside approved roots: explicit human permission is required.
@@ -616,7 +628,7 @@ class DelegationManager:
                     if time.monotonic() >= deadline:
                         return self._timeout_result(task, status, provider, started)
                     reconnects += 1
-                    if reconnects > SSE_RECONNECT_LIMIT:
+                    if reconnects > RECONNECT_LIMIT:
                         return self._fail_result(
                             status, started, provider, task,
                             record.provider_session_id,
@@ -629,13 +641,22 @@ class DelegationManager:
                 if time.monotonic() >= deadline:
                     return self._timeout_result(task, status, provider, started)
                 reconnects += 1
-                if reconnects > SSE_RECONNECT_LIMIT:
+                if reconnects > RECONNECT_LIMIT:
                     return self._fail_result(
                         status, started, provider, task,
                         record.provider_session_id,
                         reason="event_connection_lost",
                         error=str(exc)[:_ERROR_MAX],
                     )
+            # One sweep complete: pause before the next one so a poll-based
+            # provider is never hammered back-to-back for the whole run.
+            self._pause_between_sweeps()
+
+    def _pause_between_sweeps(self) -> None:
+        """Sleep the configured poll interval (tests may zero it out)."""
+        interval = self.poll_interval_seconds
+        if interval > 0:
+            time.sleep(interval)
 
     # --- internals: permission routing ---------------------------------
 
@@ -670,7 +691,7 @@ class DelegationManager:
         tool = _SyntheticTool(
             id=f"permission.{permission.action}",
             name=f"delegated {permission.action}",
-            description="executor permission translated to JARVIS policy",
+            description="executor permission translated to Great Sage policy",
             version="1.0.0",
             risk_level=risk,
             category=category,
@@ -992,12 +1013,8 @@ class DelegationManager:
             )
 
 
-def record_session_id(status: DelegationRunStatus) -> str:
-    return status.session_id or status.task_id
-
-
 def _classify_permission(action: str) -> tuple[ToolCategory, ToolRisk]:
-    """Translate an executor permission action to JARVIS category/risk.
+    """Translate an executor permission action to Great Sage category/risk.
 
     Unknown actions default to SYSTEM/HIGH so they are asked about (or
     denied in lockdown) — never silently allowed.

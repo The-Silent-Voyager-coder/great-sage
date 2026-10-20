@@ -2,7 +2,7 @@
 
 ## 1. Principle
 
-J.A.R.V.I.S. must **never** give an LLM unrestricted computer access. Every
+Great Sage must **never** give an LLM unrestricted computer access. Every
 action passes through the permission layer. An agent asking for a shell, a
 delete, or a registry change is evaluated like any other action.
 
@@ -37,6 +37,9 @@ deny   → refuse, log audit entry
 - Default mode is **`ask`** (`security.default_mode`).
 - READ actions within trusted roots may be auto-approved.
 - A grant is scoped + bounded (`ttl`, path prefix, task id) and revocable.
+- `greatsage task run --approve` installs a provider scoped to that task id;
+  requests for other tasks fall back to the previous provider (or deny), and
+  `critical` tools still never reach approval.
 - Previously denied actions require re-approval; auto-repeat of denied actions
   by an agent loop is blocked and logged.
 
@@ -47,8 +50,8 @@ deny   → refuse, log audit entry
   `allow`/`ask`/`deny`) are used **as the enforcement layer**, not bypassed.
 - We never invoke OpenCode with unrestricted auto-approval. `--auto` style
   mode is only considered when the equivalent action would already be
-  auto-allowed by J.A.R.V.I.S. policy; otherwise approvals are surfaced.
-- J.A.R.V.I.S. passes its own permission decision to OpenCode (or prompts the
+  auto-allowed by Great Sage policy; otherwise approvals are surfaced.
+- Great Sage passes its own permission decision to OpenCode (or prompts the
   user), rather than letting the agent self-approve destructive actions.
 
 ## 5. Audit Log
@@ -61,7 +64,12 @@ risk_level, decision, user_response, scope, duration, error
 ```
 
 Audit log location: `C:\GREATSAGE\data\sage-audit.log` (config-overridable).
-Audit writes are synchronous and cannot be disabled by agents.
+Audit writes are synchronous and cannot be disabled by agents. Implemented by
+`greatsage/observability/audit.py`: the runtime subscribes the sink to the
+event bus, appends one JSON line per event, strips prompt/content/diff/argument
+payloads, and redacts secret-shaped values. CLI commands run after the startup
+event loop closes; `EventBus.publish_nowait` dispatches synchronous sinks
+inline so CLI tool actions are audited too.
 
 ## 6. Threads (Phase 9 scope — see §10 for what shipped)
 
@@ -215,6 +223,12 @@ The agent loop never weakens the tool security pipeline:
   `AgentApprovalProvider` for the run and restores the previous provider
   afterwards. A denial is fed back to the LLM as a failed tool result —
   never auto-approved, never silently retried.
+- **Interactive approvals are scoped to pending requests.** The CLI
+  `--interactive` path uses `ApprovalBroker`; it only accepts decisions for
+  request ids currently in its pending queue, exposes a redacted/bounded
+  argument preview, and consumes each decision once. EOF/timeout denies;
+  cancellation rejects outstanding requests. The broker grants no authority
+  of its own — the tool still runs only through `ToolService.execute`.
 - **Bounded by construction.** Step count, tool-call count, wall-clock,
   per-tool repeat count, cumulative output bytes, and loop detection are
   enforced with hard ceilings; runaway or repetitive behavior ends the run

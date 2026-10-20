@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.delegation.manager import DelegationManager
 from greatsage.delegation.models import (
@@ -41,12 +41,12 @@ class DelegationService:
         self._manager: DelegationManager | None = None
         self.availability: str = "unavailable"
         self.detail: str = "delegation service not started"
-        self._config: JarvisConfig | None = None
+        self._config: SageConfig | None = None
         self.publisher: Any = None  # wired by Runtime to EventBus.publish_nowait
 
     # --- lifecycle -----------------------------------------------------
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         self._config = config
         if config is None:
             self.availability = "unavailable"

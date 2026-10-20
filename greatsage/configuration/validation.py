@@ -19,13 +19,13 @@ from greatsage.configuration.model import (
     CoreConfig,
     DelegationConfig,
     EventsConfig,
-    JarvisConfig,
     LocalProviderConfig,
     LoggingConfig,
     MemoryConfig,
     OpenCodeProviderConfig,
     PlanningConfig,
     RiskLevel,
+    SageConfig,
     SchedulerConfig,
     SecurityConfig,
     SecurityMode,
@@ -252,6 +252,7 @@ PROVIDER_FIELDS: dict[str, dict[str, Field]] = {
         "enabled": Field("bool", _describe("bool")),
         "base_url": Field("url", _describe("url")),
         "api_key_env": Field("str", _describe("str")),
+        "username_env": Field("str", _describe("str")),
         "model": Field("str", _describe("str")),
         "timeout_seconds": Field("positive_number", _describe("positive_number")),
     },
@@ -679,6 +680,19 @@ def coerce_env(kind: Kind, raw: str) -> Any:
         if not all(bool(item.strip()) for item in items):
             raise ValueError(f"expected path list separated by {os.pathsep!r}, got {raw!r}")
         return items
+    if kind == "int_list":
+        values: list[int] = []
+        for item in raw.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            try:
+                values.append(int(item))
+            except ValueError as exc:
+                raise ValueError(
+                    f"expected comma-separated integers, got {raw!r}"
+                ) from exc
+        return values
     return raw
 
 
@@ -732,7 +746,7 @@ def _set_dotted(raw: dict[str, Any], dotted: str, value: Any) -> None:
     node[parts[-1]] = value
 
 
-def build_config(raw: dict[str, Any]) -> JarvisConfig:
+def build_config(raw: dict[str, Any]) -> SageConfig:
     """Build the typed, frozen configuration from validated raw data."""
 
     def p(section: str, name: str) -> Path:
@@ -777,6 +791,7 @@ def build_config(raw: dict[str, Any]) -> JarvisConfig:
             enabled=bool(opencode_data["enabled"]),
             base_url=str(opencode_data["base_url"]),
             api_key_env=str(opencode_data["api_key_env"]),
+            username_env=str(opencode_data.get("username_env", "")),
             model=str(opencode_data.get("model", "")),
             timeout_seconds=float(opencode_data["timeout_seconds"]),
         ),
@@ -893,7 +908,7 @@ def build_config(raw: dict[str, Any]) -> JarvisConfig:
         ),
     )
 
-    return JarvisConfig(
+    return SageConfig(
         core=core,
         logging=logging,
         events=events,

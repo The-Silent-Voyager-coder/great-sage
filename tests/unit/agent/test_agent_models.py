@@ -122,10 +122,11 @@ def test_agent_result_to_dict_shape() -> None:
     assert data["steps"] == 0
     assert data["tool_calls"] == 1
     assert data["duration_ms"] == 1.5
+    assert data["memory_references"] == 0
     assert set(data) == {
         "task_id", "session_id", "state", "steps", "tool_calls",
         "tool_output_bytes", "duration_ms", "final_text", "provider",
-        "model", "error", "reason",
+        "model", "error", "reason", "memory_references",
     }
 
 

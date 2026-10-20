@@ -70,7 +70,7 @@ AGENT_CANCELLED = "AgentCancelled"
 AGENT_TIMED_OUT = "AgentTimedOut"
 AGENT_LIMIT_REACHED = "AgentLimitReached"
 
-# Phase 5B — delegation (controlled OpenCode execution under JARVIS authority)
+# Phase 5B — delegation (controlled OpenCode execution under Great Sage authority)
 DELEGATION_REQUESTED = "DelegationRequested"
 DELEGATION_STARTED = "DelegationStarted"
 DELEGATION_PROGRESS = "DelegationProgress"

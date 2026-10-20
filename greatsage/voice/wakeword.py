@@ -2,7 +2,7 @@
 
 `keyword`: exact substring match (stdlib, always available).
 `fuzzy`: exact match plus difflib tolerance for STT mishearings
-("jervis", "jarvis please" fragments) with the alias list below.
+("savis", "sage please" fragments) with the alias list below.
 Neither needs audio DSP, models, or network.
 """
 

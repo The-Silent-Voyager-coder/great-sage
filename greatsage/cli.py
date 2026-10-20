@@ -19,8 +19,9 @@ Commands:
     greatsage tools execute <tool> NAME=VALUE …  run a tool through the security
             pipeline (denied by default; --approve opts into approvals)
     greatsage agent health [--config PATH]        agent subsystem health
-    greatsage agent run --prompt "…" [--config PATH]  run a bounded agent task
-            through the same security pipeline (max steps, approvals, limits)
+    greatsage agent run --prompt "…" [--interactive] [--config PATH]
+            run a bounded agent task through the same security pipeline
+            (max steps, approvals, limits; --interactive prompts for ASK calls)
     greatsage delegation health [--config PATH]   delegation subsystem health
     greatsage delegation list [--config PATH]     running tasks then recent results
     greatsage delegation get <task_id> [--config PATH]  snapshot of one task
@@ -36,6 +37,10 @@ Commands:
     greatsage hud|status|dashboard [--config PATH]  read-only HUD (local-first,
             zero-cost status/dashboard over health, memory, agent,
             delegation, workspace, planning, task)
+    greatsage briefing [--days N] [--config PATH]  deterministic daily brief
+    greatsage schedule add|list|remove|tick [--config PATH]  recurring local jobs
+            (bounded ticks; no daemon)
+    greatsage telegram health|listen [--config PATH]  remote chat bridge (allowlist)
     greatsage vision health [--config PATH]           vision subsystem health
     greatsage vision capture [--width N] [--height N] [--out PATH]
             capture a bounded local frame (metadata only, never pixels)
@@ -45,8 +50,9 @@ Commands:
             transcribe one bounded turn (mock STT, metadata + text)
     greatsage voice speak --text TEXT [--out PATH] [--session-id ID]
             synthesize one bounded utterance (mock TTS, WAV)
-    greatsage chat [--config PATH] [--text]   conversation loop
+    greatsage chat [--config PATH] [--text] [--always-on]   conversation loop
             (voice: mic -> transcribe -> generate -> speak -> repeat)
+            (always-on: wake-word gated loop with barge-in)
             (text: type -> generate -> print -> repeat)
 
 Exit codes: 0 success, 1 general failure, 2 invalid configuration/input.
@@ -60,6 +66,7 @@ import asyncio
 import json
 import logging
 import sys
+import threading
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -67,7 +74,8 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from greatsage import __version__
-from greatsage.agent.models import AgentState
+from greatsage.agent.approval_broker import ApprovalBroker, PendingApproval
+from greatsage.agent.models import AgentResult, AgentState
 from greatsage.configuration.loader import load_config
 from greatsage.core.health import HealthStatus
 from greatsage.core.runtime import Runtime
@@ -78,7 +86,6 @@ from greatsage.exceptions import (
     DelegationUnavailableError,
     DelegationValidationError,
     HudValidationError,
-    JarvisError,
     MemoryError,
     MemoryNotFoundError,
     MemoryUnavailableError,
@@ -86,6 +93,7 @@ from greatsage.exceptions import (
     PlanningUnavailableError,
     PlanningValidationError,
     ProviderCapabilityError,
+    SageError,
     SchedulerUnavailableError,
     SchedulerValidationError,
     TaskUnavailableError,
@@ -108,7 +116,6 @@ from greatsage.interface.formatting import format_dashboard, format_status
 from greatsage.interface.models import MAX_LIMIT, VALID_SECTIONS
 from greatsage.interface.service import HudService
 from greatsage.memory.models import MemoryType
-from greatsage.memory.service import MemoryService
 from greatsage.task.models import TaskState
 from greatsage.tools.approval import DeterministicApprovalProvider
 from greatsage.tools.models import ApprovalOutcome, ToolRequest
@@ -207,6 +214,10 @@ def _build_parser() -> argparse.ArgumentParser:
     chat_parser.add_argument(
         "--provider", metavar="NAME", default=None,
         help="AI provider override (e.g. 'opencode' to route via OpenCode)",
+    )
+    chat_parser.add_argument(
+        "--always-on", action="store_true",
+        help="wake-gated always-on voice loop with barge-in (say the wake word)",
     )
 
     ai_parser = subparsers.add_parser("ai", help="AI provider commands")
@@ -384,6 +395,11 @@ def _build_parser() -> argparse.ArgumentParser:
     agent_run.add_argument("--model", default=None, help="model name override")
     agent_run.add_argument(
         "--max-steps", type=int, default=None, help="override the step limit (bounded)"
+    )
+    agent_run.add_argument(
+        "--interactive",
+        action="store_true",
+        help="prompt on stdin for each ASK-level tool call (deny on EOF/timeout)",
     )
 
     delegation_parser = subparsers.add_parser("delegation", help="delegation commands")
@@ -671,7 +687,7 @@ def _cmd_ai_health(args: argparse.Namespace) -> int:
         return EXIT_INVALID
     try:
         registry_health = runtime.intelligence.health()
-    except JarvisError as exc:
+    except SageError as exc:
         print(f"greatsage ai health: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     finally:
@@ -770,7 +786,6 @@ def _memory_filter_kwargs(args: argparse.Namespace) -> dict:
 
 
 def _print_memories(
-    service: MemoryService,
     items: list,
     total: int,
     *,
@@ -851,7 +866,7 @@ def _cmd_memory_list(args: argparse.Namespace) -> int:
     finally:
         asyncio.run(runtime.stop())
     _print_memories(
-        runtime.memory, result.items, result.total,
+        result.items, result.total,
         include_content=args.content, json_mode=args.json,
         header="Great Sage Memory",
     )
@@ -998,7 +1013,7 @@ def _cmd_memory_search(args: argparse.Namespace) -> int:
     finally:
         asyncio.run(runtime.stop())
     _print_memories(
-        runtime.memory, result.items, result.total,
+        result.items, result.total,
         include_content=args.content, json_mode=args.json,
         header=f"Great Sage Memory Search: {args.query!r}",
     )
@@ -1027,7 +1042,7 @@ def _cmd_memory_reindex(args: argparse.Namespace) -> int:
         return EXIT_OK
     print(
         f"Reindexed {data.get('embedded', 0)} memories "
-        f"({data.get('failed', 0)} failed) with model {data.get('model', '-')})."
+        f"({data.get('failed', 0)} failed) with model {data.get('model', '-')}."
     )
     return EXIT_OK
 
@@ -1278,6 +1293,99 @@ def _cmd_agent_health(args: argparse.Namespace) -> int:
     return EXIT_OK if data.get("available", False) else EXIT_FAILURE
 
 
+_AGENT_APPROVAL_WAIT_SECONDS = 300.0
+
+
+def _format_pending_approval(pending: PendingApproval) -> str:
+    lines = [
+        "Approval required",
+        f"  tool       {pending.tool_id}",
+        f"  name       {pending.tool_name}",
+        f"  risk       {pending.risk_level}",
+        f"  reason     {pending.reason or '-'}",
+    ]
+    if pending.arguments_preview:
+        lines.append(f"  arguments  {pending.arguments_preview}")
+    return "\n".join(lines)
+
+
+def _ask_agent_approval(pending: PendingApproval) -> bool:
+    """Ask on stdin; EOF/OSError denies, Ctrl+C is handled by the caller."""
+    print(_format_pending_approval(pending), file=sys.stderr)
+    print("Approve? [y/N] ", end="", file=sys.stderr, flush=True)
+    try:
+        answer = input()
+    except (EOFError, OSError):
+        print("(no input; denied)", file=sys.stderr)
+        return False
+    approved = answer.strip().lower() in {"y", "yes"}
+    print("approved" if approved else "denied", file=sys.stderr)
+    return approved
+
+
+def _run_agent_interactive(
+    runtime: Runtime,
+    *,
+    prompt: str,
+    session_id: str | None,
+    provider: str | None,
+    model: str | None,
+    max_steps: int | None,
+) -> AgentResult:
+    """Run the agent in a worker while this thread answers approvals."""
+    broker = ApprovalBroker(
+        wait_seconds=min(
+            _AGENT_APPROVAL_WAIT_SECONDS,
+            runtime.config.agent.max_wall_time_seconds,
+        )
+    )
+    outcomes: list[AgentResult] = []
+    failures: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            outcomes.append(
+                runtime.agent.run(
+                    prompt=prompt,
+                    session_id=session_id,
+                    provider=provider,
+                    model=model,
+                    max_steps=max_steps,
+                    approval=broker,
+                )
+            )
+        except BaseException as exc:  # re-raised on the CLI thread below
+            failures.append(exc)
+
+    thread = threading.Thread(
+        target=worker, name="greatsage-agent-run", daemon=True
+    )
+    thread.start()
+    try:
+        while thread.is_alive():
+            pending = broker.wait_for_pending(timeout=0.1)
+            if pending is None:
+                continue
+            if _ask_agent_approval(pending):
+                if not broker.approve(pending.request_id):
+                    print("(request already expired)", file=sys.stderr)
+            else:
+                if not broker.reject(pending.request_id):
+                    print("(request already expired)", file=sys.stderr)
+    except KeyboardInterrupt:
+        broker.reject_all()
+        runtime.agent.cancel()
+        print("\nagent run cancelled", file=sys.stderr)
+    finally:
+        thread.join()
+
+    if failures:
+        raise failures[0]
+    if not outcomes:
+        raise AgentValidationError("agent run ended without a result")
+    return outcomes[0]
+
+
 def _cmd_agent_run(args: argparse.Namespace) -> int:
     prompt = args.prompt.strip()
     if not prompt:
@@ -1289,20 +1397,30 @@ def _cmd_agent_run(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return EXIT_INVALID
     try:
-        result = runtime.agent.run(
-            prompt=prompt,
-            session_id=args.session_id,
-            provider=args.provider,
-            model=args.model,
-            max_steps=args.max_steps,
-        )
+        if getattr(args, "interactive", False):
+            result = _run_agent_interactive(
+                runtime,
+                prompt=prompt,
+                session_id=args.session_id,
+                provider=args.provider,
+                model=args.model,
+                max_steps=args.max_steps,
+            )
+        else:
+            result = runtime.agent.run(
+                prompt=prompt,
+                session_id=args.session_id,
+                provider=args.provider,
+                model=args.model,
+                max_steps=args.max_steps,
+            )
     except (AgentUnavailableError, ProviderCapabilityError) as exc:
         print(f"greatsage agent run: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     except AgentValidationError as exc:
         print(f"greatsage agent run: {exc}", file=sys.stderr)
         return EXIT_INVALID
-    except JarvisError as exc:
+    except SageError as exc:
         print(f"greatsage agent run: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     finally:
@@ -1592,7 +1710,7 @@ def _cmd_task_run(args: argparse.Namespace) -> int:
         except TaskUnavailableError as exc:
             print(f"greatsage task run: {exc}", file=sys.stderr)
             return EXIT_FAILURE
-        except JarvisError as exc:
+        except SageError as exc:
             print(f"greatsage task run: {exc}", file=sys.stderr)
             return EXIT_FAILURE
     finally:
@@ -2258,7 +2376,13 @@ def _vision_service_from_args(args: argparse.Namespace) -> VisionService:
         loaded = load_config(args.config)
     except ConfigurationError:
         raise
-    service = VisionService()
+    from greatsage.vision.capture import build_capture_manager
+    from greatsage.vision.grounding import build_grounding
+
+    service = VisionService(
+        capture=build_capture_manager(),
+        grounding=build_grounding(base_url=loaded.config.ai.local.base_url),
+    )
     service.start(loaded.config)
     return service
 
@@ -2390,8 +2514,10 @@ def _cmd_voice_health(args: argparse.Namespace) -> int:
     print("Great Sage Voice Health")
     print(f"  status    {data.get('status', 'unknown')}")
     print(f"  available {data.get('available', False)}")
-    print(f"  stt       {data.get('stt_backend', '-')}")
-    print(f"  tts       {data.get('tts_backend', '-')}")
+    stt = f"{data.get('stt_backend', '-')} (available={data.get('stt_available', False)})"
+    tts = f"{data.get('tts_backend', '-')} (available={data.get('tts_available', False)})"
+    print(f"  stt       {stt}")
+    print(f"  tts       {tts}")
     print(f"  detail    {data.get('detail') or ''}")
     return EXIT_OK if data.get("available", False) else EXIT_FAILURE
 
@@ -2482,7 +2608,7 @@ def _cmd_health(args: argparse.Namespace) -> int:
 
     try:
         asyncio.run(runtime.start())
-    except JarvisError as exc:
+    except SageError as exc:
         print(f"greatsage health: {exc}", file=sys.stderr)
         return EXIT_FAILURE
 
@@ -2521,7 +2647,7 @@ def _cmd_briefing(args: argparse.Namespace) -> int:
     except ConfigurationError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_INVALID
-    except JarvisError as exc:
+    except SageError as exc:
         print(f"greatsage briefing: runtime startup failed: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     try:
@@ -2694,7 +2820,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
     except ConfigurationError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_INVALID
-    except JarvisError as exc:
+    except SageError as exc:
         print(f"greatsage chat: runtime startup failed: {exc}", file=sys.stderr)
         return EXIT_FAILURE
 
@@ -2720,7 +2846,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
 
     session = ChatSession(
         runtime.config, runtime.intelligence, voice=voice, text_mode=text_mode,
-        device=device, provider=provider,
+        device=device, provider=provider, always_on=bool(getattr(args, "always_on", False)),
     )
     try:
         session.run()

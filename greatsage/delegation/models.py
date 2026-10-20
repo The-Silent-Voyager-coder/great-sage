@@ -149,8 +149,8 @@ class DelegationPermission:
     """A permission request surfaced by the delegated executor (spec §8-10).
 
     `action` is the provider-reported permission name (e.g. 'edit', 'bash',
-    'read'). The manager translates it into JARVIS tool category/risk and
-    evaluates it with the JARVIS SecurityPolicy — never blanket-approving.
+    'read'). The manager translates it into Great Sage tool category/risk and
+    evaluates it with the Great Sage SecurityPolicy — never blanket-approving.
     """
 
     permission_id: str
@@ -216,8 +216,8 @@ class DelegationLimits:
 class DelegationRequest:
     """The unit of delegation input (spec §4). Provider-neutral by design.
 
-    `working_directory` is validated against JARVIS path security before any
-    executor session is created; defaults resolve to the configured JARVIS
+    `working_directory` is validated against Great Sage path security before any
+    executor session is created; defaults resolve to the configured Great Sage
     workspace.
     """
 

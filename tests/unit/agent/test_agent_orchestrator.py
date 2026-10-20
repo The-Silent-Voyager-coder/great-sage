@@ -26,7 +26,7 @@ from greatsage.events.models import (
     AGENT_TOOL_CALL_REQUESTED,
 )
 from greatsage.exceptions import ProviderError
-from greatsage.intelligence.models import Message
+from greatsage.intelligence.models import Message, Role
 from tests.unit.agent._fakes import (
     FakeIntelligence,
     FakeTools,
@@ -49,7 +49,7 @@ def _run(
         task_id=task.task_id,
         prompt="test task",
         conversation=(Message.user("test task"),),
-        system_note="You are J.A.R.V.I.S.",
+        system_note="You are Great Sage",
     )
     status = AgentRunStatus(task_id=task.task_id)
     recorder = ContextRecorder(intelligence)
@@ -89,6 +89,40 @@ def test_final_response_completes() -> None:
     assert status.request_id == intelligence.requests[0].request_id
     assert status.elapsed_ms >= 0
     assert tools.calls == []
+    # No memory references: the system prompt is exactly the operator note.
+    assert intelligence.requests[0].system_prompt == "You are Great Sage"
+
+
+def test_memory_references_injected_into_system_prompt() -> None:
+    intelligence = FakeIntelligence([text_handler("ok")], keep_last=False)
+    tools = FakeTools()
+    task = AgentTask(prompt="test task")
+    context = AgentContext(
+        session_id=None,
+        task_id=task.task_id,
+        prompt="test task",
+        conversation=(Message.user("test task"),),
+        memory_references=(
+            {
+                "id": "mem_1",
+                "type": "long_term",
+                "confidence": 0.9,
+                "content": "operator prefers concise answers",
+            },
+        ),
+        system_note="You are Great Sage",
+    )
+    status = AgentRunStatus(task_id=task.task_id)
+    result = AgentOrchestrator(intelligence, tools).run(
+        task, context, AgentLimits(), status
+    )
+    assert result.state is AgentState.COMPLETED
+    prompt = intelligence.requests[0].system_prompt or ""
+    assert "operator prefers concise answers" in prompt
+    assert "[long_term]" in prompt
+    assert "untrusted" in prompt
+    assert prompt.startswith("You are Great Sage")
+    assert result.memory_references == 1
 
 
 def test_single_tool_call_then_final() -> None:
@@ -116,6 +150,33 @@ def test_tool_schemas_exposed_to_ai() -> None:
     names = [tool.name for tool in intelligence.requests[0].tools or []]
     assert "filesystem.list" in names
     assert all(tool.description for tool in intelligence.requests[0].tools or [])
+
+
+def test_assistant_tool_call_message_precedes_results() -> None:
+    # The provider-facing conversation must keep the native protocol shape:
+    # the assistant turn carrying tool calls comes before the tool results.
+    intelligence = FakeIntelligence(
+        [tool_handler("filesystem.list"), text_handler("done")], keep_last=False
+    )
+    tools = FakeTools(outputs={"filesystem.list": {"names": ["a.txt"]}})
+    result, _, _ = _run(intelligence, tools)
+    assert result.state is AgentState.COMPLETED
+    second_turn = intelligence.requests[1].messages
+    assistant_idx = None
+    tool_idx = None
+    for idx, message in enumerate(second_turn):
+        if message.role is Role.ASSISTANT and isinstance(message.content, list):
+            if any(part.kind == "tool_call" for part in message.content):
+                assistant_idx = idx
+        if message.role is Role.TOOL and tool_idx is None:
+            tool_idx = idx
+    assert assistant_idx is not None
+    assert tool_idx is not None
+    assert assistant_idx < tool_idx
+    parts = second_turn[assistant_idx].content
+    assert isinstance(parts, list)
+    call_part = next(part for part in parts if part.kind == "tool_call")
+    assert call_part.name == "filesystem.list"
 
 
 def test_multiple_tool_calls_in_one_response_execute_in_order() -> None:

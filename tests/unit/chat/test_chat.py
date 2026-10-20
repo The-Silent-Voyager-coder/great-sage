@@ -221,11 +221,11 @@ class TestTextMode:
         assert result is False
 
     def test_generation_failure_continues(self, tmp_path: Path) -> None:
-        from greatsage.exceptions import JarvisError
+        from greatsage.exceptions import SageError
 
         cfg = load_config(write_config(tmp_path)).config
         intel = MagicMock(spec=IntelligenceService)
-        intel.generate.side_effect = JarvisError("provider down")
+        intel.generate.side_effect = SageError("provider down")
         session = ChatSession(cfg, intel, text_mode=True)
 
         with patch("builtins.input", side_effect=["hello"]):
@@ -273,6 +273,24 @@ class TestVoiceMode:
 
         assert result is True
         intel.generate.assert_not_called()
+
+    def test_voice_budget_exhausted_degrades_to_text(self, tmp_path: Path) -> None:
+        from greatsage.exceptions import VoiceValidationError
+
+        cfg = load_config(write_config(tmp_path)).config
+        intel = make_mock_intelligence()
+        voice = make_mock_voice()
+        session = ChatSession(cfg, intel, voice=voice, text_mode=False)
+        voice.listen.side_effect = VoiceValidationError(
+            "session voice budget exhausted (25)"
+        )
+
+        fake_wav = b"RIFF" + b"\x00" * 40 + b"WAVE" + b"\x00" * 100
+        with patch("greatsage.chat.record_from_mic", return_value=fake_wav):
+            result = session._voice_turn()
+
+        assert result is True  # conversation continues
+        assert session._text_mode is True  # degraded to text input
 
 
 class TestHistoryTrimming:

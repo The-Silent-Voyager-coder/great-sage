@@ -1,4 +1,4 @@
-"""J.A.R.V.I.S. HUD service (Phase 10).
+"""Great Sage HUD service (Phase 10).
 
 Read-only aggregator over the existing subsystem facades. The HUD is a
 leaf consumer (ARCHITECTURE.md §4): it calls only health/stats/list

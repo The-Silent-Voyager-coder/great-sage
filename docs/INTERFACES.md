@@ -1,7 +1,7 @@
 # Core Interfaces
 
 > Status: **Phases 1–10 implemented (5A agent loop, 5B delegation,
-> 6 workspace/planning/task + voice, 7 autonomy, 8 vision stub,
+> 6 workspace/planning/task + voice, 7 autonomy, 8 vision capture,
 > 9 hardening, 10 HUD)**. Section 1 is implemented as
 > the provider abstraction and health contract (`greatsage.intelligence`);
 > sections 6 and 7 remain implemented (`greatsage.core.registry`,
@@ -134,7 +134,7 @@ class Event:
     timestamp: datetime
     session_id: str | None
     task_id: str | None
-    source: str                # "core", "tools.terminal", "integration.opencode"
+    source: str                # "core", "tools", "intelligence.opencode"
     payload: dict              # typed per event type, JSON-serializable
 ```
 
@@ -260,15 +260,16 @@ The Phase 0 dotted-get surface became executable as typed records instead:
 ```python
 load_config(config_path: str | Path | None = None,
             environ: Mapping[str, str] | None = None) -> LoadedConfig
-# LoadedConfig(config: JarvisConfig, source: str, config_path: Path | None)
+# LoadedConfig(config: SageConfig, source: str, config_path: Path | None)
 ```
 
 - Precedence (low → high): built-in defaults → YAML file → `GREATSAGE_*`
   environment variables. CLI `--config PATH` selects the file; env
   `GREATSAGE_CONFIG_PATH` also selects it; otherwise `config/sage.yaml` in the
   repo root is used if present.
-- `JarvisConfig` (frozen dataclasses: `core, logging, events, ai, memory,
-  tasks, tools, security, voice`) is typed and immutable — raw dicts are
+- `SageConfig` (frozen dataclasses: `core, logging, events, ai, memory,
+  tasks, tools, agent, delegation, workspace, planning, task, scheduler,
+  telegram, security, voice`) is typed and immutable — raw dicts are
   never exposed after loading.
 - `validate(raw)` reports every schema problem as
   `ConfigProblem(section, field, value, expected)`; missing provider fields,
@@ -357,7 +358,7 @@ abstraction, never on SQL.
 class MemoryType(StrEnum):
     WORKING = "working"          # session-scoped; RAM store, not persisted
     LONG_TERM = "long_term"      # stable facts/preferences, survives sessions
-    EPISODIC = "episodic"        # records of J.A.R.V.I.S. actions
+    EPISODIC = "episodic"        # records of Great Sage actions
     SEMANTIC = "semantic"        # storage/retrieval foundation only (no ingestion yet)
 
 @dataclass(frozen=True)
@@ -473,7 +474,7 @@ class ToolRequest:
 @dataclass(frozen=True)
 class ToolContext:              # built by the service from config
     working_directory: Path
-    environment: dict[str, str] # scrubbed — no JARVIS secrets
+    environment: dict[str, str] # scrubbed — no Great Sage secrets
     timeout_seconds: float
     max_output_bytes: int
 
@@ -511,14 +512,14 @@ class ToolRegistry:                     # greatsage/tools/registry.py
 
 class SecurityPolicy:                   # greatsage/tools/policy.py
     @classmethod
-    def from_config(cls, config: JarvisConfig) -> SecurityPolicy: ...
+    def from_config(cls, config: SageConfig) -> SecurityPolicy: ...
     def evaluate(self, request, tool) -> tuple[ToolDecision, str]: ...
 
 class ToolService:                      # greatsage/tools/service.py
     availability: str                   # "healthy" | "disabled" | "unavailable"
     approval: ApprovalProvider | None   # public; install to answer ASK
     publisher: Any                      # callable(Event); wired by the runtime
-    def start(self, config: JarvisConfig | None = None) -> None: ...
+    def start(self, config: SageConfig | None = None) -> None: ...
     def execute(self, request: ToolRequest) -> ToolResult: ...
     def registry(self) -> ToolRegistry: ...
     def health(self) -> dict: ...
@@ -605,7 +606,7 @@ class AgentOrchestrator:    # greatsage/agent/orchestrator.py
 
 class AgentService:         # greatsage/agent/service.py
     availability: str       # "healthy" | "disabled" | "unavailable"
-    def start(self, config: JarvisConfig) -> None: ...
+    def start(self, config: SageConfig) -> None: ...
     def run(self, prompt: str, *, session_id: str | None = None,
             provider: str | None = None, model: str | None = None,
             max_steps: int | None = None) -> AgentResult: ...
@@ -614,9 +615,9 @@ class AgentService:         # greatsage/agent/service.py
     def register_health_check(self, health_registry) -> None: ...
 
 class AgentApprovalProvider:   # greatsage/agent/approval.py
-    def approve_all(self) -> None: ...
-    def disapprove_all(self) -> None: ...
-    def is_open(self) -> bool: ...
+    def approve(self, request_id: str) -> None: ...
+    def reject(self, request_id: str) -> None: ...
+    def has_pending(self) -> bool: ...
     def request_approval(self, request, tool, reason) -> ApprovalOutcome: ...
 ```
 
@@ -643,7 +644,8 @@ class AgentApprovalProvider:   # greatsage/agent/approval.py
 ```text
 greatsage agent health [--config PATH] [--json]
 greatsage agent run --prompt TEXT [--session-id SID] [--provider NAME]
-                  [--model NAME] [--max-steps N] [--json] [--config PATH]
+                  [--model NAME] [--max-steps N] [--interactive]
+                  [--json] [--config PATH]
 ```
 
 Exit codes: `0` completed run / healthy; `1` failure (unavailable provider,
@@ -667,11 +669,17 @@ class PlanningService:    # greatsage/planning/service.py
                     plan_id: str | None = None) -> dict: ...
     def get(self, plan_id: str) -> dict | None: ...
     def list(self) -> list[dict]: ...
+    def verify(self, plan_id: str) -> dict: ...
+    def approve(self, plan_id: str) -> dict: ...   # DRAFT → READY after verification
     def health(self) -> dict: ...   # available/status/enabled/detail
 
 class TaskService:        # greatsage/task/service.py
-    def run(self, plan: str) -> TaskReport: ...     # plan file (.yaml/.json) or plan_id
+    def run(self, plan: str, *, approved: bool = False) -> TaskReport: ...
+    # Plan file (.yaml/.json) or plan_id; plan must be READY. approved=True
+    # installs a task-scoped approval provider (critical remains denied).
     def resume(self, task_id: str) -> TaskReport: ...
+    # FAILED/TIMED_OUT tasks reopen; successful steps are skipped and failed
+    # steps are retried.
     def list(self, limit: int = 50) -> list[dict]: ...
     def get(self, task_id: str) -> dict: ...
     def cancel(self, task_id: str) -> dict: ...
@@ -684,12 +692,14 @@ class TaskService:        # greatsage/task/service.py
 greatsage workspace scan [PATH] [--config PATH] [--json]
 greatsage workspace info [--id ID] [--path PATH] [--config PATH] [--json]
 greatsage workspace health [--config PATH] [--json]
-greatsage planning create GOAL [--workspace-id ID] [--workspace-root PATH]
+greatsage planning create --goal TEXT [--workspace PATH]
                      [--plan-id ID] [--config PATH] [--json]
 greatsage planning get <plan_id> [--config PATH] [--json]
 greatsage planning list [--config PATH] [--json]
+greatsage planning verify <plan_id> [--config PATH] [--json]
+greatsage planning approve <plan_id> [--config PATH] [--json]
 greatsage planning health [--config PATH] [--json]
-greatsage task run PLAN [--config PATH] [--json]
+greatsage task run PLAN [--approve] [--verify-only] [--config PATH] [--json]
 greatsage task resume <task_id> [--config PATH] [--json]
 greatsage task list [--limit N] [--config PATH] [--json]
 greatsage task get <task_id> [--config PATH] [--json]

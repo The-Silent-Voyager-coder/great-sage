@@ -229,9 +229,9 @@ class TTSManager:
         started = time.perf_counter()
         audio, meta = self._backend.synthesize(cleaned)
         elapsed = time.perf_counter() - started
-        if elapsed > self._limits.listen_timeout_seconds:
+        if elapsed > self._limits.synth_timeout_seconds:
             raise VoiceTimeoutError(
-                f"speak exceeded {self._limits.listen_timeout_seconds}s (took {elapsed:.2f}s)"
+                f"speak exceeded {self._limits.synth_timeout_seconds}s (took {elapsed:.2f}s)"
             )
         if len(audio) > self._limits.max_audio_bytes:
             raise VoiceValidationError(

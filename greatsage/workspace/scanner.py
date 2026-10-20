@@ -26,7 +26,7 @@ from greatsage.workspace.models import (
 )
 
 _DEFAULT_ENTRY_GLOBS: dict[ProjectType, list[str]] = {
-    ProjectType.PYTHON: ["pyproject.toml", "setup.py", "jarvis/cli.py", "main.py", "app.py"],
+    ProjectType.PYTHON: ["pyproject.toml", "setup.py", "greatsage/cli.py", "main.py", "app.py"],
     ProjectType.NODE: ["package.json", "src/index.js", "index.js"],
     ProjectType.RUST: ["Cargo.toml", "src/main.rs"],
     ProjectType.GO: ["go.mod", "main.go"],
@@ -70,7 +70,8 @@ class WorkspaceScanner:
             raise WorkspaceValidationError(f"workspace path is not a directory: {canonical}")
         start = time.monotonic()
         project_type = detect_project_type(canonical)
-        # Per-workspace config override at .jarvis/workspace.yaml
+        # Per-workspace config override at .sage/workspace.yaml (legacy
+        # .greatsage/ falls back; see _load_workspace_config)
         config_file = self._load_workspace_config(canonical)
         if config_file.project_type is not None:
             project_type = config_file.project_type
@@ -83,15 +84,26 @@ class WorkspaceScanner:
             project_type=project_type,
             entry_points=tuple(entry_points),
             structure=structure,
-            metadata={"config_present": (canonical / ".jarvis" / "workspace.yaml").exists()},
+            metadata={"config_present": any(
+                (canonical / loc / name).exists()
+                for loc in (".sage", ".greatsage")
+                for name in ("workspace.yaml", "workspace.yml")
+            )},
         )
 
     def _load_workspace_config(self, root: Path) -> WorkspaceConfigFile:
-        cfg_path = root / ".jarvis" / "workspace.yaml"
-        if not cfg_path.is_file():
-            cfg_path = root / ".jarvis" / "workspace.yml"
-            if not cfg_path.is_file():
-                return WorkspaceConfigFile()
+        for candidate in (
+            root / ".sage" / "workspace.yaml",
+            root / ".sage" / "workspace.yml",
+            # Legacy locations from previous generation; read-only fallback.
+            root / ".greatsage" / "workspace.yaml",
+            root / ".greatsage" / "workspace.yml",
+        ):
+            if candidate.is_file():
+                cfg_path = candidate
+                break
+        else:
+            return WorkspaceConfigFile()
         try:
             data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
             if not isinstance(data, dict):
@@ -112,9 +124,6 @@ class WorkspaceScanner:
                 if candidate not in seen:
                     entries.append(EntryPoint(path=candidate, kind=ptype.value, description=pattern))  # noqa: E501
                     seen.add(candidate)
-            # also check glob for directories?
-            if pattern.endswith(".py") or pattern.endswith(".js"):
-                continue
         # Extra entry points from config file
         for ep in cfg.extra_entry_points:
             cand = (root / ep) if not ep.is_absolute() else ep

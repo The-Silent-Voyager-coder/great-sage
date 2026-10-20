@@ -73,7 +73,7 @@ class StructureSummary:
 
 @dataclass(frozen=True)
 class WorkspaceConfigFile:
-    """Optional per-workspace file at .jarvis/workspace.yaml (repo root)."""
+    """Optional per-workspace file at .sage/workspace.yaml (repo root)."""
 
     name: str | None = None
     project_type: ProjectType | None = None
@@ -139,7 +139,7 @@ def detect_project_type(root: Path) -> ProjectType:
     # Heuristics: check for common python files
     if (root / "setup.py").is_file() or (root / "requirements.txt").is_file():
         return ProjectType.PYTHON
-    if (root / "src").is_dir() or (root / "jarvis").is_dir():
+    if (root / "src").is_dir() or (root / "greatsage").is_dir():
         # fallback: if we see python package
         return ProjectType.PYTHON
     return ProjectType.GENERIC

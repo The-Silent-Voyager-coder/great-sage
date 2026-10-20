@@ -11,7 +11,7 @@ from greatsage.cli import EXIT_FAILURE, EXIT_INVALID, EXIT_OK, main
 
 def write_cli_config(tmp_path: Path) -> Path:
     d = str(tmp_path).replace("\\", "/")
-    p = tmp_path / "jarvis.yaml"
+    p = tmp_path / "sage.yaml"
     p.write_text(
         f"""
 core:
@@ -115,7 +115,7 @@ def test_task_run_verify_only_and_approve(tmp_path: Path, capsys) -> None:  # ty
         "steps": [
             {"id": "s1", "sequence": 1, "description": "list", "tool_id": "filesystem.list", "arguments": {"path": str(ws)}, "risk_estimate": "low", "acceptance_criteria": "ok"},
         ],
-        "status": "draft",
+        "status": "ready",
         "created_at": "2026-01-01T00:00:00+00:00",
         "updated_at": "2026-01-01T00:00:00+00:00",
         "metadata": {},
@@ -127,7 +127,7 @@ def test_task_run_verify_only_and_approve(tmp_path: Path, capsys) -> None:  # ty
     assert code == EXIT_OK
     assert json.loads(capsys.readouterr().out)["ok"] is True
 
-    # Approved run records the flag; unapproved default still works (compat).
+    # --approve installs a task-scoped provider; the plan must already be ready.
     code = main(["task", "run", str(plan_path), "--approve", "--config", str(cfg), "--json"])
     assert code == EXIT_OK
     data = json.loads(capsys.readouterr().out)

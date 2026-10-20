@@ -5,10 +5,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.events.models import (
     SCHEDULE_CREATED,
@@ -33,14 +32,14 @@ class SchedulerService:
     """Facade over schedule persistence + bounded tick execution."""
 
     def __init__(self) -> None:
-        self._config: JarvisConfig | None = None
+        self._config: SageConfig | None = None
         self._repository: SchedulerRepository | None = None
         self._availability: str = "unavailable"
         self._detail: str = "scheduler service not started"
         self.publisher: Any = None
         self._handlers: dict[str, ScheduleHandler] = {}
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         self._config = config
         if config is None:
             self._availability = "unavailable"
@@ -214,7 +213,3 @@ class SchedulerService:
             self.publisher(Event(type=event_type, source="scheduler", payload=payload))
         except Exception as exc:  # pragma: no cover
             log.warning("scheduler event publish failed: %s", exc, extra={"component": "scheduler"})
-
-
-def default_database_path() -> Path:
-    return Path("C:/GREATSAGE/data/sage-scheduler.db")

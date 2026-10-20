@@ -34,7 +34,7 @@ def write_config(tmp_path: Path) -> Path:
     path.write_text(
         f"""
 core:
-  name: "J.A.R.V.I.S. Vision Tools Test"
+  name: "Great Sage Vision Tools Test"
   data_dir: "{d}/data"
   cache_dir: "{d}/cache"
   logs_dir: "{d}/logs"
@@ -149,6 +149,14 @@ def test_describe_tool_reads_bmp(tmp_path: Path) -> None:
     assert len(result.output["regions"]) == 8
 
 
+def test_describe_tool_uses_real_capture_id(tmp_path: Path) -> None:
+    from greatsage.vision.tools import _capture_id_from_path
+
+    real = "cap_" + "a" * 32
+    assert _capture_id_from_path(tmp_path / f"{real}.bmp") == real
+    assert _capture_id_from_path(tmp_path / "screenshot.bmp") == "cap_" + "0" * 32
+
+
 def test_describe_tool_rejects_missing_file(tmp_path: Path) -> None:
     tool = VisionDescribeTool()
     result = tool.execute({"capture_path": str(tmp_path / "ghost.bmp")}, make_context(tmp_path))
@@ -172,7 +180,8 @@ def test_policy_denies_capture_outside_roots(tmp_path: Path) -> None:
 def test_service_pipeline_executes_vision_capture(tmp_path: Path) -> None:
     service = ToolService()
     service.start(load_config(str(write_config(tmp_path))).config)
-    register_vision_tools(service.registry())
+    # Vision tools are registered by ToolService.start (Phase 8 wiring).
+    assert "vision.capture" in service.registry().list_ids()
     request = ToolRequest(
         request_id=uuid.uuid4().hex,
         tool_id="vision.capture",
@@ -188,7 +197,7 @@ def test_service_pipeline_executes_vision_capture(tmp_path: Path) -> None:
 def test_pipeline_denies_outside_roots(tmp_path: Path) -> None:
     service = ToolService()
     service.start(load_config(str(write_config(tmp_path))).config)
-    register_vision_tools(service.registry())
+    assert "vision.capture" in service.registry().list_ids()
     service.approval = DeterministicApprovalProvider(ApprovalOutcome.APPROVED)
     request = ToolRequest(
         request_id=uuid.uuid4().hex,

@@ -29,7 +29,8 @@ ai:
       type: "local"
       enabled: true
       # Do not hard-code a model until hardware benchmarking is performed.
-      # Example: model: "qwen2.5:7b-instruct"
+      # Example: model: "yousefburhanahmad/spark-x2.5-4b:q8" (needs Ollama
+      # >= 0.34.1 for the spark2_5 architecture) — or "qwen2.5:7b-instruct"
       base_url: "http://127.0.0.1:11434"   # Ollama
       model: ""
       timeout_seconds: 120
@@ -37,7 +38,13 @@ ai:
       type: "opencode"
       enabled: false
       base_url: "http://127.0.0.1:4096"
+      # Server password from the environment (never commit it). The server
+      # prints one on first launch, or set OPENCODE_SERVER_PASSWORD yourself
+      # and restart `opencode serve`. Sent as HTTP Basic username:password.
       api_key_env: "OPENCODE_API_KEY"
+      # Server username (default "opencode"; only set this if you overrode
+      # OPENCODE_SERVER_USERNAME on the server).
+      username_env: ""
       # Default model for direct calls, "provider/model#variant" shape.
       # "" = server default. Variants are server-side effort presets
       # (none/minimal/low/medium/high/xhigh where the model offers them).
@@ -98,8 +105,8 @@ agent:
   loop_detection_threshold: 3
 
 delegation:
-  # Controlled OpenCode execution under JARVIS authority (Phase 5B).
-  # JARVIS validates, secures, permissions, monitors, and cancels; the
+  # Controlled OpenCode execution under Great Sage authority (Phase 5B).
+  # Great Sage validates, secures, permissions, monitors, and cancels; the
   # executor only codes. All limits are validated against absolute safety
   # ceilings at load time and are never unlimited.
   enabled: false
@@ -139,7 +146,7 @@ task:
   database_path: "C:/GREATSAGE/data/sage-tasks.db"
 
 scheduler:
-  # Bounded recurring jobs (roadmap Phase C) — tick via `jarvis schedule tick`
+  # Bounded recurring jobs (roadmap Phase C) — tick via `greatsage schedule tick`
   # (directly or from Windows Task Scheduler). No daemon.
   enabled: true
   max_schedules: 50

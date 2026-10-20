@@ -90,7 +90,7 @@ class TelegramClient:
             raise TelegramError("photo too large for telegram send")
         import uuid as _uuid
 
-        boundary = f"----jarvis{_uuid.uuid4().hex}".encode("ascii")
+        boundary = f"----sage{_uuid.uuid4().hex}".encode("ascii")
         clipped = caption if len(caption) <= 1000 else caption[:1000] + "…"
         body = bytearray()
         body.extend(

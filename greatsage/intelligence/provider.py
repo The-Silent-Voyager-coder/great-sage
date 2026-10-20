@@ -138,7 +138,16 @@ class AIProvider(ABC):
             if health.ok:
                 self._set_state(ProviderState.READY)
             else:
-                self._set_state(ProviderState.UNAVAILABLE, health.detail)
+                # Preserve DEGRADED vs UNAVAILABLE from the probe. A malformed
+                # service is degraded (reachable but wrong); an unreachable one
+                # is unavailable. Collapsing both hides the distinction.
+                state = (
+                    health.state
+                    if health.state
+                    in (ProviderState.DEGRADED, ProviderState.UNAVAILABLE, ProviderState.FAILED)
+                    else ProviderState.UNAVAILABLE
+                )
+                self._set_state(state, health.detail)
         except Exception as exc:  # provider failure must never escape init
             log.error(
                 "provider %s failed to initialize",
@@ -190,6 +199,11 @@ class AIProvider(ABC):
                 detail=str(exc),
                 latency_ms=(datetime.now(UTC) - started).total_seconds() * 1000.0,
             )
+        if result.ok and self._state is not ProviderState.READY:
+            # Recovery: a previously unavailable/degraded provider that now
+            # probes healthy must become selectable again (the router filters
+            # on internal state, not just the returned health object).
+            self._set_state(ProviderState.READY, result.detail)
         if result.latency_ms is None:
             elapsed = (datetime.now(UTC) - started).total_seconds() * 1000.0
             result = ProviderHealth(

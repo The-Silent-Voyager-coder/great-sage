@@ -39,6 +39,8 @@ Top-level sections:
 | `workspace.*` / `planning.*` | discovery scanner / deterministic planner limits + database paths |
 | `scheduler.*` | enable flag, max schedules ceiling-guarded, database path |
 | `telegram.*` | enable flag, token env name, allowlisted chat ids, poll/listen bounds |
+| `agent.*` | bounded agent loop limits (steps, tool calls, wall clock, output bytes, loop threshold) |
+| `delegation.*` | executor delegation limits (wall clock, output bytes, permissions, sessions, depth) + default provider |
 | `tools.*` | working directory, execution timeout, output cap, allowed/denied roots, per-category default risk |
 | `security.*` | mode (`normal`/`lockdown`/`development`), auto-approve rules, audit log path |
 | `voice.*` | wake word / STT / TTS engine + model selections (mock default; vosk/piper/fuzzy opt-in) |
@@ -85,7 +87,7 @@ Phase 1 ships the complete loader, validator, and CLI:
   http(s) URLs (port 1–65535), and missing provider fields are refused with
   `ConfigurationError` — no silent fallbacks, no secrets in messages.
 - **Typed config** (`greatsage/configuration/model.py`): frozen dataclasses
-  (`JarvisConfig` + per-section records, `SecurityMode`/`RiskLevel` StrEnums);
+  (`SageConfig` + per-section records, `SecurityMode`/`RiskLevel` StrEnums);
   raw dicts never escape the loader.
 - **Env vars**: only schema-documented keys are recognized
   (`GREATSAGE_SECTION__FIELD`, `GREATSAGE_AI__PROVIDERS__<NAME>__<FIELD>`);
@@ -94,7 +96,7 @@ Phase 1 ships the complete loader, validator, and CLI:
 - **CLI**: `greatsage config validate [--config PATH]` prints `Configuration
   valid.` + `Source:` (resolved path or `built-in defaults`), exits `0`/`2`.
 - The `Config` object is exposed via the runtime: `Runtime.config
-  (greatsage.configuration.model.JarvisConfig)`.
+  (greatsage.configuration.model.SageConfig)`.
 
 ## 7. AI Provider Configuration (Phase 2)
 
@@ -109,13 +111,15 @@ ai:
       type: local                              # Ollama adapter
       enabled: true
       base_url: http://127.0.0.1:11434
-      model: ""                                # provider decides
-      timeout_seconds: 60
+      model: ""                                # provider decides (Ollama tags)
+      timeout_seconds: 120
     opencode:
       type: opencode
       enabled: false                           # off by default
       base_url: http://127.0.0.1:4096
-      api_key_env: ""                          # e.g. "OPENCODE_API_KEY"
+      api_key_env: ""                          # e.g. "OPENCODE_API_KEY" (server password)
+      username_env: ""                         # e.g. "OPENCODE_API_USER" (default "opencode")
+      model: ""                                # e.g. "opencode/muse-spark-1.3-contributor-free#medium"
       timeout_seconds: 120
 ```
 
@@ -124,8 +128,10 @@ Semantics:
 - `providers.<name>.type` is an enum: `local` (Ollama adapter) or `opencode`
   (remote). Unknown or disabled types are not registered.
 - `base_url` must be a valid http(s) URL (validated with port range).
-- `api_key_env` names an environment variable; the value is read once at
-  start and used for Bearer auth. Never put the key itself in YAML.
+- `api_key_env` names an environment variable holding the OpenCode server
+  password; `username_env` optionally names one holding the server username
+  (default `opencode`). Values are read once at start and used for HTTP
+  Basic auth. Never put secrets in YAML.
 - `model` is the default model hint for the provider; the provider decides
   when empty (`/api/tags` for Ollama) and the router drops providers whose
   advertised models exclude an explicit request model.
@@ -281,13 +287,20 @@ Environment override convention: `GREATSAGE_WORKSPACE__MAX_ENTRIES`,
 `GREATSAGE_PLANNING__MAX_PLAN_STEPS`, `GREATSAGE_TASK__MAX_STEPS`.
 
 CLI: `greatsage workspace scan|info|health`, `greatsage planning
-create|get|list|health`, `greatsage task run|resume|list|get|cancel|health`
-(see `docs/INTERFACES.md` §12).
+create|get|list|verify|approve|health`, `greatsage task
+run|resume|list|get|cancel|health` (see `docs/INTERFACES.md` §12). `task run`
+requires a READY plan and `--approve` installs a task-scoped approval provider;
+`task resume` reopens failed/timed-out tasks and retries failed steps.
 
 Note: the Phase 6 voice pipeline adds a `voice:` section (wake_word / stt
 / tts engine + model selections, see `config/sage.example.yaml`).
-Vision (Phase 8) currently defines no `vision.*` config keys — its
-service is config-independent. Phase 7 (autonomy) and Phase 9 (security)
+Vision (Phase 8) defines no `vision.*` config keys — its service is
+config-independent; the capture backend and grounding select automatically
+(GDI when on Windows, VLM when the local Ollama vision model is present)
+and can be overridden per-machine with the environment variables
+`GREATSAGE_VISION_BACKEND` (`auto` | `stub` | `gdi`) and
+`GREATSAGE_VISION_GROUNDING` (`auto` | `stub` | `ollama`, optional
+`GREATSAGE_VISION_GROUNDING_MODEL`). Phase 7 (autonomy) and Phase 9 (security)
 add no new config sections by design: Phase 7 ships as
 `greatsage/planning/graph.py` + `verify.py` over the Phase 6 `planning:` /
 `task:` blocks, and Phase 9 ships as `tools/redaction.py` + policy

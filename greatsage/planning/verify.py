@@ -14,19 +14,32 @@ from typing import Any
 from greatsage.planning import graph as task_graph
 from greatsage.planning.limits import MAX_PLAN_STEPS_CEILING
 
-#: Tool ids the Phase 4 registry can execute. Plans referencing anything
-#: else fail closed at verification time (and again in the executor).
-KNOWN_TOOLS = frozenset({
-    "filesystem.list",
-    "filesystem.stat",
-    "filesystem.read",
-    "filesystem.mkdir",
-    "filesystem.write",
-    "process.list",
-    "process.info",
-    "system.info",
-    "shell.execute",
-})
+
+#: Tool ids the secure registry can execute (default set + voice/vision
+#: toolsets wired by ToolService.start). Plans referencing anything else
+#: fail closed at verification time (and again in the executor).
+def _known_tool_ids() -> frozenset[str]:
+    from greatsage.tools.defaults import DEFAULT_TOOL_CLASSES
+    from greatsage.vision.tools import VisionCaptureTool, VisionDescribeTool
+    from greatsage.voice.tools import VoiceListenTool, VoiceSpeakTool, VoiceWakeTool
+
+    classes = (
+        *DEFAULT_TOOL_CLASSES,
+        VoiceListenTool,
+        VoiceSpeakTool,
+        VoiceWakeTool,
+        VisionCaptureTool,
+        VisionDescribeTool,
+    )
+    ids: set[str] = set()
+    for tool_class in classes:
+        tool_id = getattr(tool_class, "id", None)
+        if isinstance(tool_id, str) and tool_id:
+            ids.add(tool_id)
+    return frozenset(ids)
+
+
+KNOWN_TOOLS = _known_tool_ids()
 
 #: Risk estimates that always require explicit human approval.
 APPROVAL_REQUIRED_RISKS = frozenset({"high", "critical"})

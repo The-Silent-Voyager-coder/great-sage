@@ -20,7 +20,7 @@ from greatsage.tools.filesystem_tools import (
 )
 from greatsage.tools.gui_tools import GuiClickTool, GuiScreenshotTool, GuiTypeTool
 from greatsage.tools.homeassistant_tools import HomeAssistantCallTool, HomeAssistantStatesTool
-from greatsage.tools.network_tools import NetworkFetchTool
+from greatsage.tools.network_tools import NetworkFetchTool, NetworkWebfetchTool
 from greatsage.tools.process_tools import ProcessInfoTool, ProcessListTool
 from greatsage.tools.registry import ToolRegistry
 from greatsage.tools.shell_tools import ShellExecuteTool
@@ -37,6 +37,7 @@ DEFAULT_TOOL_CLASSES: tuple[type, ...] = (
     SystemInfoTool,
     ShellExecuteTool,
     NetworkFetchTool,
+    NetworkWebfetchTool,
     HomeAssistantStatesTool,
     HomeAssistantCallTool,
     GuiScreenshotTool,

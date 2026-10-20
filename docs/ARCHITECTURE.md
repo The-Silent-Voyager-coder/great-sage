@@ -1,7 +1,7 @@
 # Architecture
 
 > Status: **Phases 1–10 implemented (5A agent loop, 5B delegation,
-> 6 workspace/planning/task + voice, 7 autonomy graph/verify, 8 vision stub,
+> 6 workspace/planning/task + voice, 7 autonomy graph/verify, 8 vision capture,
 > 9 hardening, 10 HUD)**. This is the
 > contract that all modules must honor. It may be refined by the architect,
 > but not silently violated by implementation. Phase 2 added full detail for
@@ -13,7 +13,7 @@
 
 ## 1. Mission
 
-J.A.R.V.I.S. is a modular, local-first, zero-cost personal AI operating system.
+Great Sage is a modular, local-first, zero-cost personal AI operating system.
 It understands objectives, plans, acts through permissioned tools, remembers
 useful facts, delegates coding to OpenCode, monitors long-running work, and
 verifies results before claiming success.
@@ -27,7 +27,7 @@ verifies results before claiming success.
 3. **Provider independence** — the core depends on the `AIProvider`
    abstraction, never on OpenCode or any specific model vendor. Removing
    OpenCode must not break the core.
-4. **OpenCode is an agent/tool, not J.A.R.V.I.S.** — J.A.R.V.I.S. owns
+4. **OpenCode is an agent/tool, not Great Sage** — Great Sage owns
    understanding, planning, state, delegation, monitoring, permissions,
    verification, and reporting. OpenCode does implementation work only, through
    its supported HTTP server/API (never screen scraping or UI automation).
@@ -41,7 +41,7 @@ verifies results before claiming success.
                          USER
                           │
                 ┌─────────▼─────────┐
-                │  J.A.R.V.I.S.     │
+                │  Great Sage     │
                 │  CORE RUNTIME     │   lifecycle, config, events,
                 └─────────┬─────────┘   sessions, task coordination
                           │
@@ -69,11 +69,12 @@ verifies results before claiming success.
 
         Voice / Text / Future Vision
                     ▼
-               JARVIS CORE
+               Great Sage CORE
                     │
               OpenCode Integration
                     │
-             Coding Specialist (DeepSeek V4 Flash)
+       Delegated coding executor (OpenCode server,
+       e.g. muse-spark-1.3 free-tier variants)
 ```
 
 ## 4. Module Map
@@ -84,12 +85,12 @@ verifies results before claiming success.
 | `events/` | Event bus, structured serializable events | 1 |
 | `configuration/` | Validated config loading (file + env), secrets handling | 1 |
 | `observability/` | Structured logs, spans, activity reconstruction | 1 |
-| `interface/` | CLI, terminal/simple web/voice entry points | 1 |
+| `interface/` | CLI entry (`greatsage/cli.py`) wiring + read-only HUD status/dashboard facade (no `hud/` module) | 1/10 |
 | `intelligence/` | `AIProvider` abstraction, local provider, model router, structured output, streaming | 2 |
 | `memory/` | Memory models, SQLite storage, provenance, retrieval | 3 |
 | `tools/` | Typed tool registry + security pipeline (files, processes, shell, system, network, gui); policy, path security, shell classifier, approvals | 4 + roadmap |
 | `agent/` | Bounded AI↔tool loop: validated state machine, limits, loop detection, approval pause, cancellation, events, health | 5A |
-| `delegation/` | Controlled OpenCode delegation: manager, limits, service, secure permission routing, bounded SSE | 5B |
+| `delegation/` | Controlled OpenCode delegation: manager, limits, service, secure permission routing, bounded polling | 5B |
 | `workspace/` | Workspace discovery, scanner, persistence | 6 |
 | `planning/` | Deterministic plan decomposition + task-graph DAG + verification gate (no AI calls) | 6/7 |
 | `task/` | Bounded multi-step execution over the tool pipeline | 6 |
@@ -99,24 +100,26 @@ verifies results before claiming success.
 | `telegram/` | Remote chat bridge (Bot API long-poll, allowlisted chats, bounded listen) | roadmap C |
 | `agents/` | Reserved for composable agents (empty — Phase 7 ships as `planning/graph.py` + `verify.py`) | 7+ (reserved) |
 | `security/` | Reserved (empty by design — Phase 9 ships as `tools/redaction.py` + policy tightening) | 9 (patch) |
-| `vision/` | Bounded capture, grounding, permissioned tools (stub backend, no OCR) | 8 |
+| `vision/` | Bounded capture (real GDI on Windows), local VLM grounding (Ollama, stub fallback), permissioned tools | 8 |
 | `interface/` | Local-first HUD status/dashboard (read-only; no `hud/` module) | 10 |
 | `integration/` | Reserved (empty — OpenCode wire lives in `intelligence/opencode.py` + `delegation/`) | 5 (via 5B) |
 | `storage/` | Local filesystem layout, archive policy (Google Drive = external archive only) | 1 |
-| `tests/` | Unit, integration, provider, tool, security, memory, task, OpenCode tests | all |
+| `tests/` | Unit suites per module + CLI integration tests (in-process fake servers; no network) | all |
 
 ### Dependency direction
 
 `core` → `events`, `configuration`, `observability` (always available)
-`core` → `intelligence`, `memory`, `planning`, `tools`, `security` (subsystems)
-`core` → `integration` (OpenCode) — **only via provider abstraction; never direct**
+`core` → `intelligence`, `memory`, `tools` (subsystems)
+`core` → `vision`, `voice`, `scheduler`, `telegram`, `workspace`, `planning`, `task` (subsystems)
+`intelligence/opencode.py` (the OpenCode wire) depends on provider interfaces, never the reverse.
 
 Rules:
 
 - Modules may depend on `events`, `configuration`, `observability` freely.
 - No module may depend on `core` internals (inject service handles instead).
-- `integration` depends on `intelligence` interfaces, not the reverse.
-- `voice`, `vision`, `interface` are leaves: they consume, never get consumed.
+- `voice` and `vision` are service-layer leaves; their toolsets register
+  into `tools` and are consumed through the standard pipeline.
+- `interface` reads only: it never executes, mutates, or starts services.
 
 ## 5. Core Runtime
 
@@ -182,8 +185,9 @@ greatsage/intelligence/
 ├── transport.py   stdlib urllib JSON/text helpers (this module is stdlib-only;
 │                  full runtime dependency list in docs/DEPENDENCY_POLICY.md §5)
 ├── ollama.py      OllamaProvider (local) - /api/tags health + /api/chat
-├── opencode.py    OpenCodeProvider (remote) - /global/health, /doc, session,
-│                  prompt_async - connection only in Phase 2, no delegation
+├── opencode.py    OpenCodeProvider (remote, server v2 API under /api) -
+│                  /api/info, /openapi.json, session prompt+poll - see
+│                  docs/OPENCODE_INTEGRATION.md
 ├── mock.py        MockProvider - deterministic, born READY, configurable
 │                  failure/latency/capabilities, used heavily in tests
 ├── benchmark.py   read-only hardware diagnostics (CPU/RAM/GPU/VRAM/Ollama)
@@ -259,14 +263,19 @@ events + states; they never crash the runtime, the bus, or other providers.
 ### Adapters
 
 - **OllamaProvider** (`local`): probes `/api/tags`, generates via
-  `/api/chat`, streams newline-delimited JSON, never downloads models. When
+  `/api/chat`, streams newline-delimited JSON, never downloads models.
+  Tool calling is advertised only when the configured model declares the
+  `tools` capability (`POST /api/show`, best-effort probe); otherwise the
+  agent layer fails closed with an explicit capability error. When
   Ollama is absent the provider reports UNAVAILABLE and the runtime keeps
   working.
-- **OpenCodeProvider** (`opencode`): `/global/health` + `/doc` (OpenAPI 3.1)
-  for connectivity, `/session/*` for session lifecycle, `prompt_async` for
+- **OpenCodeProvider** (`opencode`): `/api/info` for connectivity,
+  `/api/session/*` for session lifecycle, prompt-then-poll for
   generation. Phase 2 scope is provider connection only — no authority
-  delegation, no agent loop. API key (when configured) is read from the
-  environment variable named by `api_key_env`, never from source.
+  delegation, no agent loop. The server password (when configured) is read
+  from the environment variable named by `api_key_env` (username from
+  `username_env`, default `opencode`) for HTTP Basic auth, never from
+  source.
 
 ## 5.2 Memory Layer (Phase 3)
 
@@ -433,13 +442,17 @@ greatsage/agent/
 ├── limits.py           default limits + ceilings; the smaller applicable
 │                       limit wins (12/8/300/3/2MiB/3 defaults,
 │                       25/50/1800/10/16MiB/25 ceilings)
-├── loopdetect.py       LoopDetector: rolling tool-call signature window
-│                       with exact-match threshold burst detection
+├── loopdetect.py       LoopDetector: consecutive tool-call signature streak
+│                       with exact-match threshold detection
 ├── cancellation.py     CancellationToken: cooperative cancel requested/cancelled
-├── approval.py         AgentApprovalProvider: thread-safe async decision
-│                       gate (approve_all/disapprove_all/DENIED, timeout,
-│                       cancellation); decisions are snapshotted under the
-│                       lock and consumed outside it (no re-entrant deadlock)
+├── approval.py         AgentApprovalProvider: thread-safe decision gate
+│                       (approve/reject per request, timeout, cancellation);
+│                       decisions are snapshotted under the lock and consumed
+│                       outside it (no re-entrant deadlock); the notifying
+│                       wrapper keeps WAITING_FOR_APPROVAL observable
+├── approval_broker.py  ApprovalBroker: pending queue + approve/reject for
+│                       CLI/UI presenters (redacted argument preview; only
+│                       currently-pending ids can be decided)
 ├── orchestrator.py     AgentOrchestrator: deterministic bounded loop +
 │                       AGENT_* event stream
 ├── service.py          AgentService facade owned by the Runtime
@@ -473,8 +486,9 @@ terminal state (on timeout/denial-resolve).
    `ToolService.execute` (the **only** path to a tool; the security
    pipeline incl. approvals always runs — no internal bypass).
 4. Per-call limit checks (`max_single_tool_calls`);
-   `AGENT_TOOL_CALL_COMPLETED` or `AGENT_TOOL_CALL_FAILED`; the
-   result — including an approval denial, fed back as a failed
+   `AGENT_TOOL_CALL_COMPLETED` carries `success: true|false` (denials and
+   failures arrive as failed `ToolCallResult`s — no separate failed event);
+   the result — including an approval denial, fed back as a failed
    `ToolCallResult` — becomes a tool message for the next step.
 5. `AGENT_STEP_COMPLETED`; memory retrieval is injected as bounded
    context (`_MEMORY_REFERENCE_LIMIT = 5`, silent degradation) — never
@@ -599,10 +613,10 @@ AgentOrchestrator; payloads carry ids/reasons only — prompts are never
 published):
 
 ```text
-AGENT_STARTED              AGENT_TOOL_CALL_FAILED
+AGENT_STARTED              AGENT_TOOL_CALL_COMPLETED
 AGENT_STEP_STARTED         AGENT_STEP_COMPLETED
-AGENT_TOOL_CALL_REQUESTED  AGENT_COMPLETED
-AGENT_TOOL_CALL_COMPLETED
+AGENT_TOOL_CALL_REQUESTED  AGENT_COMPLETED / FAILED /
+                           CANCELLED / TIMED_OUT / LIMIT_REACHED
 ```
 
 Phase 4 `TOOL_*` events keep flowing for every tool execution inside an
@@ -648,14 +662,14 @@ Host platform names (`C:\GREATSAGE`) are **defaults in config**, never hard-code
 ### Google Drive
 
 Google Drive is an **external archive/backup** destination only. Active
-development never happens inside a synced Drive workspace. J.A.R.V.I.S. must
+development never happens inside a synced Drive workspace. Great Sage must
 not assume Drive is mounted or synced.
 
 ## 8. Observability
 
 Structured logs (JSON) with fields: `timestamp, session_id, task_id, component,
 event, action, result, duration, error`. Goal: the user can ask "what were you
-doing for the last two hours?" and J.A.R.V.I.S. can reconstruct its activity
+doing for the last two hours?" and Great Sage can reconstruct its activity
 from logs + task history.
 
 ### Phase 1 implementation
@@ -675,7 +689,7 @@ from logs + task history.
 
 ## 9. Verification (Definition of "done")
 
-J.A.R.V.I.S. distinguishes *"I think it worked"* from *"the test/build/check
+Great Sage distinguishes *"I think it worked"* from *"the test/build/check
 actually succeeded."* Coding tasks follow:
 
 ```text

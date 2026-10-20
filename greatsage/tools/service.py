@@ -16,7 +16,7 @@ import time
 from dataclasses import replace
 from typing import Any
 
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthStatus
 from greatsage.events.models import (
     TOOL_ALLOWED,
@@ -88,12 +88,12 @@ class ToolService:
         self.publisher: Any = None  # callable(event) -> None, wired by runtime
         self.availability: str = "unavailable"
         self.detail: str = "tool service not started"
-        self._config: JarvisConfig | None = None
+        self._config: SageConfig | None = None
         self._environment: dict[str, str] = {}
 
     # --- lifecycle -----------------------------------------------------
 
-    def start(self, config: JarvisConfig | None = None) -> None:
+    def start(self, config: SageConfig | None = None) -> None:
         """Initialize registry, policy, and environment from config.
 
         Failures never raise: the service reports 'unavailable' and the
@@ -107,6 +107,7 @@ class ToolService:
         try:
             registry = self._registry or ToolRegistry()
             register_default_tools(registry)
+            self._register_media_tools(registry, config)
             policy = self._policy or SecurityPolicy.from_config(config)
         except Exception as exc:
             self.availability = "unavailable"
@@ -141,6 +142,48 @@ class ToolService:
         self.availability = "disabled"
         self.detail = "tool service stopped"
         log.info("tool service stopped", extra={"component": "tools"})
+
+    def _register_media_tools(self, registry: ToolRegistry, config: SageConfig) -> None:
+        """Register the voice and vision toolsets (Phase 6/8 wiring).
+
+        Voice tools are built from the configured engines (the same backends
+        ``greatsage voice`` uses); if the configured engines cannot be built
+        they stay unregistered rather than silently substituting mocks —
+        registered mocks always report ``backend: mock`` in their output.
+        Vision tools use the bounded stub backend by design (Phase 8).
+        """
+        from greatsage.vision.capture import build_capture_manager
+        from greatsage.vision.grounding import build_grounding
+        from greatsage.vision.tools import register_vision_tools
+
+        register_vision_tools(
+            registry,
+            capture=build_capture_manager(),
+            grounding=build_grounding(base_url=config.ai.local.base_url),
+        )
+        try:
+            from greatsage.voice.backends import (
+                build_stt_manager,
+                build_tts_manager,
+                build_wake_detector,
+            )
+            from greatsage.voice.limits import default_limits as voice_limits
+            from greatsage.voice.tools import register_voice_tools
+
+            limits = voice_limits()
+            register_voice_tools(
+                registry,
+                limits=limits,
+                stt=build_stt_manager(config, limits),
+                tts=build_tts_manager(config, limits),
+                wake=build_wake_detector(config, limits),
+            )
+        except Exception as exc:  # voice stays optional; never fails the service
+            log.warning(
+                "voice tools not registered: %s",
+                exc,
+                extra={"component": "tools"},
+            )
 
     # --- public API ----------------------------------------------------
 

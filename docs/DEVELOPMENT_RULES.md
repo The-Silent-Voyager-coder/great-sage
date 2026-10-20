@@ -38,11 +38,14 @@ a design that contradicts `docs/ARCHITECTURE.md` / `docs/INTERFACES.md`.
 
 ## 3. Architecture Boundaries
 
-- `core` never depends on `integration.opencode` directly — only through the
-  `AIProvider` abstraction (`docs/ARCHITECTURE.md` §4).
+- `core` never depends on the OpenCode wire directly — only through the
+  `AIProvider` abstraction (`docs/ARCHITECTURE.md` §4); the wire itself
+  lives in `greatsage/intelligence/opencode.py` (the reserved
+  `greatsage/integration/` package stays empty).
 - Modules communicate via `events/` where decoupling is required; direct calls
   only for true service dependency.
-- Permissions are enforced in `security/`, never inlined into tools.
+- Permissions are enforced by `greatsage/tools/policy.py` (SecurityPolicy +
+  hooks), never inlined into tools.
 
 ## 4. Code Standards (Phase 1+)
 
@@ -57,7 +60,7 @@ a design that contradicts `docs/ARCHITECTURE.md` / `docs/INTERFACES.md`.
 
 - Use OpenCode's server/API/SDK for integration — never screen scraping or
   UI automation (`docs/OPENCODE_INTEGRATION.md`).
-- Treat OpenCode as an agent/tool: J.A.R.V.I.S. remains responsible for
+- Treat OpenCode as an agent/tool: Great Sage remains responsible for
   understanding, planning, state, permissions, verification, reporting.
 - Never assume `--auto`/auto-approval is safe for unrestricted operation
   (`docs/SECURITY_MODEL.md` §4).

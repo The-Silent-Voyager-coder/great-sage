@@ -12,6 +12,7 @@ Wire-up (for integration-qa): `register_vision_tools(registry)`.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,7 @@ from greatsage.exceptions import VisionError
 from greatsage.tools.models import BaseTool, ToolCategory, ToolContext, ToolResult, ToolRisk
 from greatsage.tools.registry import ToolRegistry
 from greatsage.vision.capture import CaptureManager, StubCaptureBackend, parse_bmp_dimensions
-from greatsage.vision.grounding import GroundingStub
+from greatsage.vision.grounding import GroundingStub, OllamaGrounding
 from greatsage.vision.limits import (
     DEFAULT_HEIGHT,
     DEFAULT_WIDTH,
@@ -35,17 +36,28 @@ def _failure(tool_id: str, error: str) -> ToolResult:
     return ToolResult(request_id="", tool_id=tool_id, success=False, error=error[:500])
 
 
+_CAPTURE_ID_RE = re.compile(r"^cap_[0-9a-f]{32}$")
+
+
+def _capture_id_from_path(path: Path) -> str:
+    """The real capture id when the filename carries one; else a stand-in."""
+    stem = path.stem
+    if _CAPTURE_ID_RE.match(stem):
+        return stem
+    return "cap_" + "0" * 32
+
+
 class VisionCaptureTool(BaseTool):
     """Capture a bounded local frame; returns metadata, never pixels."""
 
     id = "vision.capture"
     name = "Vision capture"
-    description = "Capture a bounded local screen frame (stub backend, BMP)."
+    description = "Capture a bounded local screen frame (GDI on Windows, stub fallback; BMP)."
     version = "1.0.0"
     risk_level = ToolRisk.SAFE
     category = ToolCategory.SYSTEM
-    capabilities = ("observe",)
-    PATH_ARGUMENTS = ("output_path",)
+    capabilities: tuple[str, ...] = ("observe",)
+    PATH_ARGUMENTS: tuple[str, ...] = ("output_path",)
     input_schema: dict[str, object] = {
         "type": "object",
         "properties": {
@@ -68,13 +80,20 @@ class VisionCaptureTool(BaseTool):
         "required": ["backend", "width", "height", "format", "size_bytes"],
     }
 
-    def __init__(self, limits: VisionLimits | None = None) -> None:
+    def __init__(
+        self,
+        limits: VisionLimits | None = None,
+        capture: CaptureManager | None = None,
+    ) -> None:
         self._limits = limits or default_limits()
+        self._capture = capture or CaptureManager(
+            limits=self._limits, backend=StubCaptureBackend()
+        )
 
     def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         width = int(arguments.get("width", DEFAULT_WIDTH))
         height = int(arguments.get("height", DEFAULT_HEIGHT))
-        manager = CaptureManager(limits=self._limits, backend=StubCaptureBackend())
+        manager = self._capture
         try:
             image, meta = manager.capture(width, height)
         except VisionError as exc:
@@ -117,8 +136,8 @@ class VisionDescribeTool(BaseTool):
     version = "1.0.0"
     risk_level = ToolRisk.SAFE
     category = ToolCategory.SYSTEM
-    capabilities = ("observe",)
-    PATH_ARGUMENTS = ("capture_path",)
+    capabilities: tuple[str, ...] = ("observe",)
+    PATH_ARGUMENTS: tuple[str, ...] = ("capture_path",)
     input_schema: dict[str, object] = {
         "type": "object",
         "properties": {
@@ -137,8 +156,13 @@ class VisionDescribeTool(BaseTool):
         "required": ["summary", "regions", "truncated"],
     }
 
-    def __init__(self, limits: VisionLimits | None = None) -> None:
+    def __init__(
+        self,
+        limits: VisionLimits | None = None,
+        grounding: GroundingStub | OllamaGrounding | None = None,
+    ) -> None:
         self._limits = limits or default_limits()
+        self._grounding = grounding or GroundingStub(limits=self._limits)
 
     def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         _ = context
@@ -166,12 +190,17 @@ class VisionDescribeTool(BaseTool):
         max_regions = arguments.get("max_regions")
         if max_regions is not None and (not isinstance(max_regions, int) or max_regions <= 0):
             return _failure(self.id, "max_regions must be a positive integer")
-        description = GroundingStub(limits=self._limits).describe(
-            "cap_" + "0" * 32,
-            width,
-            height,
-            max_regions=max_regions,
-        )
+        capture_id = _capture_id_from_path(path)
+        try:
+            description = self._grounding.describe(
+                capture_id,
+                width,
+                height,
+                image=image,
+                max_regions=max_regions,
+            )
+        except Exception as exc:  # grounding failure is an honest tool failure
+            return _failure(self.id, f"grounding failed: {exc}")
         return ToolResult(
             request_id="",
             tool_id=self.id,
@@ -184,13 +213,17 @@ class VisionDescribeTool(BaseTool):
         )
 
 
-VISION_TOOL_CLASSES: tuple[type, ...] = (
-    VisionCaptureTool,
-    VisionDescribeTool,
-)
+def register_vision_tools(
+    registry: ToolRegistry,
+    *,
+    limits: VisionLimits | None = None,
+    capture: CaptureManager | None = None,
+    grounding: GroundingStub | OllamaGrounding | None = None,
+) -> None:
+    """Register Phase 8 vision tools into `registry` (duplicates raise).
 
-
-def register_vision_tools(registry: ToolRegistry) -> None:
-    """Register Phase 8 vision tools into `registry` (duplicates raise)."""
-    for tool_class in VISION_TOOL_CLASSES:
-        registry.register(tool_class())
+    An injected capture manager is used as-is (the runtime passes one wired
+    with the selected backend); omitted, the bounded stub backend is used.
+    """
+    registry.register(VisionCaptureTool(limits=limits, capture=capture))
+    registry.register(VisionDescribeTool(limits=limits, grounding=grounding))

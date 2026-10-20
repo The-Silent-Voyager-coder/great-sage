@@ -1,4 +1,4 @@
-"""J.A.R.V.I.S. core runtime.
+"""Great Sage core runtime.
 
 Coordinates startup and shutdown of the Phase 1 service set:
 
@@ -12,11 +12,12 @@ shutdown is graceful and safe to repeat.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from greatsage import __version__
 from greatsage.configuration.loader import load_config
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.core.health import HealthRegistry, HealthReport, HealthStatus
 from greatsage.core.lifecycle import Lifecycle, RuntimeState
 from greatsage.core.registry import ServiceRegistry
@@ -24,6 +25,7 @@ from greatsage.core.storage import StorageManager
 from greatsage.events.bus import EventBus
 from greatsage.events.models import RUNTIME_STARTED, RUNTIME_STOPPED, RUNTIME_STOPPING, Event
 from greatsage.exceptions import LifecycleError
+from greatsage.observability.audit import AuditLog
 from greatsage.observability.logging import flush_logging, setup_logging
 
 if TYPE_CHECKING:
@@ -42,15 +44,16 @@ log = logging.getLogger("greatsage.core.runtime")
 
 
 class Runtime:
-    """The J.A.R.V.I.S. core runtime facade."""
+    """The Great Sage core runtime facade."""
 
-    def __init__(self, config: JarvisConfig) -> None:
+    def __init__(self, config: SageConfig) -> None:
         self._config = config
         self._lifecycle = Lifecycle()
         self._registry: ServiceRegistry | None = None
         self._bus: EventBus | None = None
         self._storage: StorageManager | None = None
         self._health: HealthRegistry | None = None
+        self._audit: AuditLog | None = None
         self._intelligence: IntelligenceService | None = None
         self._memory: MemoryService | None = None
         self._tools: ToolService | None = None
@@ -71,7 +74,7 @@ class Runtime:
     # --- accessors -----------------------------------------------------
 
     @property
-    def config(self) -> JarvisConfig:
+    def config(self) -> SageConfig:
         return self._config
 
     @property
@@ -181,7 +184,6 @@ class Runtime:
             registry.register("event_bus", bus)
             registry.register("storage", storage)
             registry.register("health", health)
-            self._register_health_checks(health)
 
             self._registry = registry
             self._bus = bus
@@ -189,8 +191,14 @@ class Runtime:
             self._health = health
 
             storage.ensure_directories()
-
             self._register_health_checks(health)
+
+            # The append-only audit sink must be in place before any service
+            # can emit an event. It is synchronous so CLI calls (which run
+            # after the startup event loop closes) still reach it.
+            audit = AuditLog(self._audit_path())
+            self._audit = audit
+            bus.subscribe(audit.write)
 
             from greatsage.intelligence.service import IntelligenceService
 
@@ -310,10 +318,6 @@ class Runtime:
         """Graceful shutdown. Safe to call repeatedly and before start()."""
         if self.state in (RuntimeState.CREATED, RuntimeState.STOPPED):
             return
-        if self.state not in (
-            RuntimeState.INITIALIZING, RuntimeState.RUNNING, RuntimeState.STOPPING,
-        ):
-            return
         if self.state is not RuntimeState.STOPPING:
             self._lifecycle.transition(RuntimeState.STOPPING)
 
@@ -358,6 +362,10 @@ class Runtime:
 
             await bus.close()
 
+        if self._audit is not None:
+            self._audit.close()
+            self._audit = None
+
         flush_logging()
         self._lifecycle.transition(RuntimeState.STOPPED)
         log.info("runtime stopped", extra={"component": "core"})
@@ -371,6 +379,9 @@ class Runtime:
                 self._registry.stop_all()
             if self._bus is not None:
                 await self._bus.close()
+            if self._audit is not None:
+                self._audit.close()
+                self._audit = None
             flush_logging()
             self._lifecycle.transition(RuntimeState.STOPPED)
         except Exception as exc:  # cleanup must never mask the original error
@@ -396,6 +407,22 @@ class Runtime:
         health.register(
             "storage", self._storage_status, f"storage root: {self._config.core.data_dir}"
         )
+
+    def _audit_path(self) -> Path:
+        """Resolve the audit log, keeping the default under ``core.data_dir``.
+
+        The built-in default is ``C:/GREATSAGE/data/sage-audit.log``. Tests and
+        isolated runtimes override ``core.data_dir`` but often leave the
+        security default untouched; deriving the default from the data root
+        prevents those runs from writing to the operator's real audit file.
+        An explicitly configured audit path always wins.
+        """
+        configured = self._config.security.audit_log
+        default = Path("C:/GREATSAGE/data/sage-audit.log")
+        data_dir = self._config.core.data_dir
+        if configured == default and data_dir != default.parent:
+            return data_dir / "sage-audit.log"
+        return configured
 
     def _core_status(self) -> HealthStatus:
         if self.state is RuntimeState.RUNNING:

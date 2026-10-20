@@ -136,6 +136,22 @@ class TaskRecord:
         if self.state in _TERMINAL:
             self.completed_at = datetime.now(UTC)
 
+    def reopen(self) -> None:
+        """Prepare a failed/timed-out task for an explicit retry.
+
+        This is deliberately not a normal state transition: resuming is a
+        human-initiated new attempt, and completed/cancelled tasks stay
+        terminal.
+        """
+        if self.state not in (TaskState.FAILED, TaskState.TIMED_OUT):
+            raise TaskStateError(
+                f"task {self.id} cannot be reopened from {self.state.value}"
+            )
+        self.state = TaskState.PENDING
+        self.completed_at = None
+        self.error = None
+        self.updated_at = datetime.now(UTC)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,

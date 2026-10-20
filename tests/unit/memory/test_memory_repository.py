@@ -203,7 +203,7 @@ def test_search_fts_phrase_match(repo: SqliteMemoryRepository) -> None:
 
 
 def test_search_case_insensitive(repo: SqliteMemoryRepository) -> None:
-    repo.create(_memory(content="J.A.R.V.I.S. LOVES COFFEE"))
+    repo.create(_memory(content="Great Sage LOVES COFFEE"))
     assert len(repo.search("coffee", MemoryFilter())) == 1
 
 

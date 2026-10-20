@@ -24,7 +24,7 @@ from greatsage.voice.limits import VoiceLimits, default_limits
 from greatsage.voice.models import sanitize_audio_path
 from greatsage.voice.stt import STTManager
 from greatsage.voice.tts import TTSManager
-from greatsage.voice.wakeword import KeywordWakeDetector
+from greatsage.voice.wakeword import KeywordWakeDetector, WakeWordDetector
 
 
 def _failure(tool_id: str, error: str) -> ToolResult:
@@ -40,8 +40,8 @@ class VoiceListenTool(BaseTool):
     version = "1.0.0"
     risk_level = ToolRisk.SAFE
     category = ToolCategory.SYSTEM
-    capabilities = ("observe",)
-    PATH_ARGUMENTS = ("audio_path",)
+    capabilities: tuple[str, ...] = ("observe",)
+    PATH_ARGUMENTS: tuple[str, ...] = ("audio_path",)
     input_schema: dict[str, object] = {
         "type": "object",
         "properties": {
@@ -61,12 +61,13 @@ class VoiceListenTool(BaseTool):
         "required": ["utterance_id", "backend", "text_chars", "sha256"],
     }
 
-    def __init__(self, limits: VoiceLimits | None = None) -> None:
+    def __init__(self, limits: VoiceLimits | None = None, stt: STTManager | None = None) -> None:
         self._limits = limits or default_limits()
+        self._stt = stt
 
     def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         _ = context
-        manager = STTManager(limits=self._limits)
+        manager = self._stt or STTManager(limits=self._limits)
         text = arguments.get("text")
         raw_path = arguments.get("audio_path")
         if (text is None) == (raw_path is None):
@@ -109,8 +110,8 @@ class VoiceSpeakTool(BaseTool):
     version = "1.0.0"
     risk_level = ToolRisk.SAFE
     category = ToolCategory.SYSTEM
-    capabilities = ("speak",)
-    PATH_ARGUMENTS = ("output_path",)
+    capabilities: tuple[str, ...] = ("speak",)
+    PATH_ARGUMENTS: tuple[str, ...] = ("output_path",)
     input_schema: dict[str, object] = {
         "type": "object",
         "properties": {
@@ -131,15 +132,16 @@ class VoiceSpeakTool(BaseTool):
         "required": ["utterance_id", "backend", "text_chars", "size_bytes"],
     }
 
-    def __init__(self, limits: VoiceLimits | None = None) -> None:
+    def __init__(self, limits: VoiceLimits | None = None, tts: TTSManager | None = None) -> None:
         self._limits = limits or default_limits()
+        self._tts = tts
 
     def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         _ = context
         text = arguments.get("text")
         if not isinstance(text, str) or not text.strip():
             return _failure(self.id, "text must be a non-empty string")
-        manager = TTSManager(limits=self._limits)
+        manager = self._tts or TTSManager(limits=self._limits)
         try:
             audio, record = manager.speak(text)
         except VoiceError as exc:
@@ -182,8 +184,8 @@ class VoiceWakeTool(BaseTool):
     version = "1.0.0"
     risk_level = ToolRisk.SAFE
     category = ToolCategory.SYSTEM
-    capabilities = ("observe",)
-    PATH_ARGUMENTS = ()
+    capabilities: tuple[str, ...] = ("observe",)
+    PATH_ARGUMENTS: tuple[str, ...] = ()
     input_schema: dict[str, object] = {
         "type": "object",
         "properties": {
@@ -201,8 +203,13 @@ class VoiceWakeTool(BaseTool):
         "required": ["detected", "keyword", "confidence"],
     }
 
-    def __init__(self, limits: VoiceLimits | None = None) -> None:
+    def __init__(
+        self,
+        limits: VoiceLimits | None = None,
+        wake: WakeWordDetector | None = None,
+    ) -> None:
         self._limits = limits or default_limits()
+        self._wake = wake
 
     def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         _ = context
@@ -210,7 +217,10 @@ class VoiceWakeTool(BaseTool):
         if not isinstance(text, str) or not text.strip():
             return _failure(self.id, "text must be a non-empty string")
         try:
-            result = KeywordWakeDetector(self._limits.wake_keyword, limits=self._limits).check(text)
+            detector = self._wake or KeywordWakeDetector(
+                self._limits.wake_keyword, limits=self._limits
+            )
+            result = detector.check(text)
         except VoiceError as exc:
             return _failure(self.id, str(exc))
         return ToolResult(
@@ -225,14 +235,20 @@ class VoiceWakeTool(BaseTool):
         )
 
 
-VOICE_TOOL_CLASSES: tuple[type, ...] = (
-    VoiceListenTool,
-    VoiceSpeakTool,
-    VoiceWakeTool,
-)
+def register_voice_tools(
+    registry: ToolRegistry,
+    *,
+    limits: VoiceLimits | None = None,
+    stt: STTManager | None = None,
+    tts: TTSManager | None = None,
+    wake: WakeWordDetector | None = None,
+) -> None:
+    """Register Phase 6 voice tools into `registry` (duplicates raise).
 
-
-def register_voice_tools(registry: ToolRegistry) -> None:
-    """Register Phase 6 voice tools into `registry` (duplicates raise)."""
-    for tool_class in VOICE_TOOL_CLASSES:
-        registry.register(tool_class())
+    Injected managers/backends are used as-is (the runtime passes the
+    configured engines); omitted pieces fall back to mock defaults so a bare
+    `register_voice_tools(registry)` stays honest (`backend: mock`).
+    """
+    registry.register(VoiceListenTool(limits=limits, stt=stt))
+    registry.register(VoiceSpeakTool(limits=limits, tts=tts))
+    registry.register(VoiceWakeTool(limits=limits, wake=wake))

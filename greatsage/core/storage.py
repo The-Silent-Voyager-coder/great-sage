@@ -33,7 +33,7 @@ class StorageManager:
         """True if the data root can be created/accessed and written to."""
         try:
             self._core.data_dir.mkdir(parents=True, exist_ok=True)
-            probe = self._core.data_dir / ".jarvis-write-probe"
+            probe = self._core.data_dir / ".sage-write-probe"
             probe.write_text("ok", encoding="utf-8")
             probe.unlink(missing_ok=True)
             return True

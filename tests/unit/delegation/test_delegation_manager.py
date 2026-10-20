@@ -21,6 +21,7 @@ import pytest
 from greatsage.configuration.loader import load_config
 from greatsage.delegation.limits import (
     MAX_DELEGATION_DEPTH_DEFAULT,
+    POLL_INTERVAL_SECONDS,
 )
 from greatsage.delegation.manager import DelegationManager, DelegationProvider
 from greatsage.delegation.models import (
@@ -161,11 +162,11 @@ def write_delegation_config(tmp_path: Path, **overrides: Any) -> Path:
     lines = "\n".join(
         f"    {name}: {value}" for name, value in fields.items()
     )
-    path = tmp_path / "jarvis.yaml"
+    path = tmp_path / "sage.yaml"
     path.write_text(
         f"""
 core:
-  name: "J.A.R.V.I.S. Delegation Test"
+  name: "Great Sage Delegation Test"
   data_dir: "{d}/data"
   cache_dir: "{d}/cache"
   logs_dir: "{d}/logs"
@@ -719,6 +720,7 @@ def test_connection_loss_empty_stream_fails_after_bounded_reconnects(
     provider = DroppingStreamProvider()
     recorder = Recorder()
     manager, _ = make_manager(tmp_path, provider, publisher=recorder)
+    manager.poll_interval_seconds = 0.0  # bounded reconnects, no real waiting
     result = manager.delegate(
         DelegationRequest(prompt="fix", working_directory=approved_wd(tmp_path))
     )
@@ -747,6 +749,7 @@ def test_connection_loss_transport_error_fails_after_bounded_reconnects(
 ) -> None:
     provider = ErroringStreamProvider()
     manager, _ = make_manager(tmp_path, provider)
+    manager.poll_interval_seconds = 0.0  # bounded reconnects, no real waiting
     result = manager.delegate(
         DelegationRequest(prompt="fix", working_directory=approved_wd(tmp_path))
     )
@@ -773,8 +776,33 @@ def test_reconnect_recovers_after_transient_failure(tmp_path: Path) -> None:
 
     provider.iter_session_events = flaky_iter  # type: ignore[method-assign]
     manager, _ = make_manager(tmp_path, provider)
+    manager.poll_interval_seconds = 0.0  # transient failure, no real waiting
     result = manager.delegate(
         DelegationRequest(prompt="fix", working_directory=approved_wd(tmp_path))
     )
     assert result.state is DelegationState.COMPLETED
     assert calls >= 2
+
+
+class EventuallyCompletingProvider(FakeDelegationProvider):
+    """Two empty sweeps (quiet executor) then a terminal event."""
+
+    def iter_session_events(self, session_id: str) -> Iterator[DelegationEvent]:
+        self._reads += 1
+        if self._reads < 3:
+            return iter([])
+        return iter([DelegationEvent(kind=DelegationEventKind.COMPLETED, message="done")])
+
+
+def test_poll_interval_pauses_between_sweeps(tmp_path: Path) -> None:
+    provider = EventuallyCompletingProvider()
+    manager, _ = make_manager(tmp_path, provider)
+    pauses: list[float] = []
+    manager._pause_between_sweeps = lambda: pauses.append(manager.poll_interval_seconds)
+    result = manager.delegate(
+        DelegationRequest(prompt="fix", working_directory=approved_wd(tmp_path))
+    )
+    assert result.state is DelegationState.COMPLETED
+    # A pause runs after every sweep that did not end the run.
+    assert pauses == [POLL_INTERVAL_SECONDS, POLL_INTERVAL_SECONDS]
+    assert POLL_INTERVAL_SECONDS > 0

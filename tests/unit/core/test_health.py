@@ -37,6 +37,33 @@ def test_check_returns_report_with_detail() -> None:
     assert report.checked_at is not None
 
 
+def test_checker_exception_becomes_unhealthy() -> None:
+    registry = HealthRegistry()
+
+    def broken() -> HealthStatus:
+        raise RuntimeError("probe boom")
+
+    registry.register("broken", broken, "probe detail")
+    report = registry.check("broken")
+    assert report.status is HealthStatus.UNHEALTHY
+    assert "probe boom" in report.detail
+
+
+def test_check_all_continues_after_checker_exception() -> None:
+    registry = HealthRegistry()
+
+    def broken() -> HealthStatus:
+        raise RuntimeError("probe boom")
+
+    registry.register("broken", broken)
+    registry.register("healthy", lambda: HealthStatus.HEALTHY)
+    reports = registry.check_all()
+    assert [report.component for report in reports] == ["broken", "healthy"]
+    assert reports[0].status is HealthStatus.UNHEALTHY
+    assert reports[1].status is HealthStatus.HEALTHY
+    assert registry.overall(reports) is HealthStatus.UNHEALTHY
+
+
 def test_components_sorted() -> None:
     registry = HealthRegistry()
     registry.register("zulu", lambda: HealthStatus.HEALTHY)

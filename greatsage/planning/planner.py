@@ -13,7 +13,8 @@ from greatsage.planning.limits import MAX_PLAN_STEPS_CEILING, MAX_PLAN_STEPS_DEF
 from greatsage.planning.models import Plan, PlanStatus, Step
 from greatsage.workspace.models import WorkspaceInfo
 
-# Known safe tool IDs (Phase 4 registry) — planner never emits unknown tools.
+# Tools the deterministic keyword planner may emit (conservative subset of
+# the registry — verify.py accepts the full registry tool set).
 _ALLOWED_TOOLS = frozenset({
     "filesystem.list",
     "filesystem.stat",

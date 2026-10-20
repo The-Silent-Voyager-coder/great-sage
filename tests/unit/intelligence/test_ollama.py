@@ -12,7 +12,13 @@ import asyncio
 import pytest
 
 from greatsage.exceptions import ProviderCapabilityError, ProviderError, ProviderUnavailableError
-from greatsage.intelligence.models import AIRequest, Message, ToolDefinition
+from greatsage.intelligence.models import (
+    AIRequest,
+    Message,
+    Role,
+    ToolCallPart,
+    ToolDefinition,
+)
 from greatsage.intelligence.ollama import OllamaProvider
 from greatsage.intelligence.provider import Capability, ProviderState
 
@@ -59,6 +65,15 @@ def test_init_transitions_ready(ollama: OllamaProvider) -> None:
     assert ollama.state is ProviderState.READY
 
 
+def test_health_recovers_to_ready(fake_server) -> None:
+    fake_server.route("GET", "/api/tags", 200, OLLAMA_TAGS)
+    provider = OllamaProvider(base_url=fake_server.url, model="llama3:latest")
+    provider._set_state(ProviderState.UNAVAILABLE, "probe failed earlier")
+    health = provider.health()
+    assert health.ok is True
+    assert provider.state is ProviderState.READY
+
+
 def test_generate(ollama: OllamaProvider, fake_server) -> None:
     fake_server.route("POST", "/api/chat", 200, OLLAMA_CHAT)
     ollama.init()
@@ -74,6 +89,35 @@ def test_generate(ollama: OllamaProvider, fake_server) -> None:
     assert "/api/chat" in sent["path"]
     assert '"stream": false' in sent["body"]
     assert '"role": "user"' in sent["body"]
+
+
+def test_generate_selects_chat_model_when_unconfigured(fake_server) -> None:
+    fake_server.route(
+        "GET",
+        "/api/tags",
+        200,
+        {
+            "models": [
+                {"name": "nomic-embed-text:latest", "size": 100},
+                {"name": "llama3:latest", "size": 200},
+            ]
+        },
+    )
+    fake_server.route("POST", "/api/chat", 200, OLLAMA_CHAT)
+    provider = OllamaProvider(base_url=fake_server.url, model="")
+    provider.init()
+    response = provider.generate(AIRequest(messages=[Message.user("hi")]))
+    assert response.model == "llama3:latest"
+    assert '"model": "llama3:latest"' in fake_server.requests[-1]["body"]
+
+
+def test_health_degraded_without_models(fake_server) -> None:
+    fake_server.route("GET", "/api/tags", 200, {"models": []})
+    provider = OllamaProvider(base_url=fake_server.url, model="")
+    provider.init()
+    assert provider.state is ProviderState.DEGRADED
+    with pytest.raises(ProviderUnavailableError):
+        provider.generate(AIRequest(messages=[Message.user("hi")]))
 
 
 def test_generate_system_prompt_and_fields(ollama: OllamaProvider, fake_server) -> None:
@@ -204,3 +248,149 @@ def test_shutdown_before_generate(fake_server) -> None:
     assert provider.state is ProviderState.STOPPED
     with pytest.raises(ProviderUnavailableError):
         provider.generate(AIRequest(messages=[Message.user("hi")]))
+
+
+# --- tool calling (model capability gated) -----------------------------
+
+
+def _show(capabilities: list[str]) -> dict:
+    return {"capabilities": capabilities, "model_info": {}}
+
+
+def test_tool_capability_advertised_when_model_supports_tools(fake_server) -> None:
+    fake_server.route("GET", "/api/tags", 200, OLLAMA_TAGS)
+    fake_server.route("POST", "/api/show", 200, _show(["completion", "tools"]))
+    provider = OllamaProvider(base_url=fake_server.url, model="llama3:latest")
+    provider.init()
+    assert provider.capabilities().supports(Capability.TOOL_CALLING)
+
+
+def test_tool_capability_absent_without_tools_capability(fake_server) -> None:
+    fake_server.route("GET", "/api/tags", 200, OLLAMA_TAGS)
+    fake_server.route("POST", "/api/show", 200, _show(["completion"]))
+    provider = OllamaProvider(base_url=fake_server.url, model="llama3:latest")
+    provider.init()
+    assert not provider.capabilities().supports(Capability.TOOL_CALLING)
+
+
+def test_tool_capability_absent_without_configured_model(fake_server) -> None:
+    fake_server.route("GET", "/api/tags", 200, OLLAMA_TAGS)
+    provider = OllamaProvider(base_url=fake_server.url, model="")
+    provider.init()
+    assert not provider.capabilities().supports(Capability.TOOL_CALLING)
+
+
+def test_tool_capability_probed_on_fallback_model(fake_server) -> None:
+    fake_server.route("GET", "/api/tags", 200, OLLAMA_TAGS)
+    fake_server.route("POST", "/api/show", 200, _show(["completion", "tools"]))
+    provider = OllamaProvider(base_url=fake_server.url, model="")
+    provider.init()
+    assert provider.capabilities().supports(Capability.TOOL_CALLING)
+    assert provider.health().model_loaded == "llama3:latest"
+
+
+def test_tool_capability_probe_failure_is_absent(fake_server) -> None:
+    fake_server.route("GET", "/api/tags", 200, OLLAMA_TAGS)
+    fake_server.route("POST", "/api/show", 500, {"error": "old server"})
+    provider = OllamaProvider(base_url=fake_server.url, model="llama3:latest")
+    provider.init()
+    assert provider.state is ProviderState.READY  # health unaffected
+    assert not provider.capabilities().supports(Capability.TOOL_CALLING)
+
+
+TOOL_CHAT = {
+    "model": "llama3:latest",
+    "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"function": {"name": "system.info", "arguments": {"verbose": True}}}
+        ],
+    },
+    "done": True,
+    "done_reason": "stop",
+}
+
+
+def _tool_provider(fake_server) -> OllamaProvider:
+    fake_server.route("GET", "/api/tags", 200, OLLAMA_TAGS)
+    fake_server.route("POST", "/api/show", 200, _show(["completion", "tools"]))
+    provider = OllamaProvider(base_url=fake_server.url, model="llama3:latest")
+    provider.init()
+    return provider
+
+
+def test_generate_parses_message_tool_calls(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    fake_server.route("POST", "/api/chat", 200, TOOL_CHAT)
+    request = AIRequest(
+        messages=[Message.user("check")],
+        tools=[ToolDefinition(name="system.info", description="d")],
+    )
+    response = provider.generate(request)
+    assert response.tool_calls is not None
+    assert len(response.tool_calls) == 1
+    call = response.tool_calls[0]
+    assert call.name == "system.info"
+    assert call.arguments == {"verbose": True}
+    assert call.id == "call_1"
+    assert response.finish_reason.value == "tool_call"
+
+
+def test_generate_parses_string_tool_arguments(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    chat = {
+        "model": "llama3:latest",
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"function": {"name": "filesystem.list", "arguments": '{"path": "."}'}}
+            ],
+        },
+        "done": True,
+    }
+    fake_server.route("POST", "/api/chat", 200, chat)
+    response = provider.generate(
+        AIRequest(
+            messages=[Message.user("list")],
+            tools=[ToolDefinition(name="filesystem.list", description="d")],
+        )
+    )
+    assert response.tool_calls is not None
+    assert response.tool_calls[0].arguments == {"path": "."}
+
+
+def test_chat_body_think_metadata_controls_field(fake_server) -> None:
+    # Explicit per-request thinking control: a boolean in request metadata
+    # becomes Ollama's `think` field; absent means model default.
+    provider = _tool_provider(fake_server)
+    fake_server.route("POST", "/api/chat", 200, OLLAMA_CHAT)
+    provider.generate(
+        AIRequest(messages=[Message.user("hi")], metadata={"think": False})
+    )
+    assert '"think": false' in fake_server.requests[-1]["body"]
+    provider.generate(AIRequest(messages=[Message.user("hi")]))
+    assert '"think"' not in fake_server.requests[-1]["body"]
+
+
+def test_chat_body_renders_native_tool_protocol(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    fake_server.route("POST", "/api/chat", 200, OLLAMA_CHAT)
+    request = AIRequest(
+        messages=[
+            Message.user("check"),
+            Message(
+                role=Role.ASSISTANT,
+                content=[ToolCallPart(id="call_1", name="system.info", arguments={})],
+            ),
+            Message.tool("call_1", '{"ok": true}'),
+        ],
+        tools=[ToolDefinition(name="system.info", description="d")],
+    )
+    provider.generate(request)
+    body = fake_server.requests[-1]["body"]
+    assert '"tool_calls"' in body
+    assert '"role": "tool"' in body
+    assert "tool_call_id" not in body  # Ollama has no id field on tool results
+    assert '"parameters"' in body  # tool definitions rendered

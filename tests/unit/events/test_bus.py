@@ -138,6 +138,39 @@ def test_publish_nowait() -> None:
     run(scenario())
 
 
+def test_publish_nowait_without_loop_dispatches_sync_subscriber() -> None:
+    bus = EventBus()
+    received: list[Event] = []
+    bus.subscribe(received.append, event_type=TASK_STARTED)
+    bus.publish_nowait(Event(type=TASK_STARTED, source="cli"))
+    assert [event.type for event in received] == [TASK_STARTED]
+    assert received[0].source == "cli"
+    assert bus.published_count == 1
+
+
+def test_publish_nowait_without_loop_skips_async_subscriber() -> None:
+    bus = EventBus()
+    called: list[Event] = []
+
+    async def handler(event: Event) -> None:
+        called.append(event)
+
+    bus.subscribe(handler, event_type=TASK_STARTED)
+    bus.publish_nowait(Event(type=TASK_STARTED, source="cli"))
+    assert called == []
+
+
+def test_publish_nowait_closed_bus_drops_silently() -> None:
+    async def scenario() -> None:
+        bus = EventBus()
+        await bus.close()
+        # Must not raise and must not leave a failing task behind.
+        bus.publish_nowait(Event(type=TASK_STARTED, source="test"))
+        await asyncio.sleep(0.01)
+
+    run(scenario())
+
+
 def test_event_serialization_roundtrip() -> None:
     event = Event(type=TASK_STARTED, source="test", session_id="s1", task_id="t1", payload={"a": 1})
     restored = Event.from_dict(event.to_dict())

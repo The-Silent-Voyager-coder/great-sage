@@ -1,4 +1,4 @@
-"""J.A.R.V.I.S. HUD data models (Phase 10).
+"""Great Sage HUD data models (Phase 10).
 
 Read-only snapshot types for the local-first status/dashboard. The HUD
 never carries memory content, prompts, secrets, or diffs — only counts,

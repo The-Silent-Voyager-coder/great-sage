@@ -21,7 +21,7 @@ htmlcov/
 *.pem
 secrets/
 
-# --- J.A.R.V.I.S. runtime ---
+# --- Great Sage runtime ---
 data/
 cache/
 logs/

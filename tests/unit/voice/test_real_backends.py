@@ -104,7 +104,7 @@ def _make_8k_wav() -> bytes:
 @_needs_piper()
 def test_piper_synthesis() -> None:
     backend = _piper_backend()
-    audio, meta = backend.synthesize("hello jarvis")
+    audio, meta = backend.synthesize("hello sage")
     assert audio[0:4] == b"RIFF" and audio[8:12] == b"WAVE"
     assert len(audio) > 1000
     assert meta["source"] == "piper"

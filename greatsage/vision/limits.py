@@ -3,7 +3,7 @@
 Phase 8 captures are bounded in dimensions, bytes, description length,
 region count, and per-session capture count. Overrides below the defaults
 are honored; anything above a ceiling is clamped down to it (the smaller
-limit wins — a runtime invariant, mirroring jarvis.agent.limits).
+limit wins — a runtime invariant, mirroring greatsage.agent.limits).
 """
 
 from __future__ import annotations

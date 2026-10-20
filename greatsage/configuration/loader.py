@@ -16,7 +16,7 @@ from typing import Any
 import yaml
 
 from greatsage.configuration.defaults import DEFAULTS
-from greatsage.configuration.model import JarvisConfig
+from greatsage.configuration.model import SageConfig
 from greatsage.configuration.validation import apply_env, build_config, format_problems, validate
 from greatsage.exceptions import ConfigurationError
 
@@ -29,7 +29,7 @@ CONFIG_PATH_ENV = "GREATSAGE_CONFIG_PATH"
 class LoadedConfig:
     """Validated configuration plus its provenance (for CLI reporting)."""
 
-    config: JarvisConfig
+    config: SageConfig
     source: str
     config_path: Path | None
 

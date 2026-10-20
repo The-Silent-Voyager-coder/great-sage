@@ -31,7 +31,7 @@ def test_defaults_load_without_file(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 def test_valid_file_overrides_defaults(valid_config_yaml: Path) -> None:
     loaded = load_config(valid_config_yaml)
     assert loaded.config_path is not None
-    assert loaded.config.core.name == "J.A.R.V.I.S. Test"
+    assert loaded.config.core.name == "Great Sage Test"
     assert loaded.config.logging.level == "DEBUG"
 
 
@@ -98,7 +98,7 @@ def test_environment_beats_yaml(valid_config_yaml: Path, monkeypatch: pytest.Mon
     monkeypatch.setenv("GREATSAGE_LOGGING__LEVEL", "WARNING")
     loaded = load_config(valid_config_yaml)
     assert loaded.config.logging.level == "WARNING"
-    assert loaded.config.core.name == "J.A.R.V.I.S. Test"  # yaml still applies elsewhere
+    assert loaded.config.core.name == "Great Sage Test"  # yaml still applies elsewhere
 
 
 def test_environment_beats_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

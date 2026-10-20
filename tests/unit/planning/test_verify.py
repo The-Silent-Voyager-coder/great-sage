@@ -11,7 +11,16 @@ from greatsage.configuration.loader import load_config
 from greatsage.exceptions import PlanningValidationError
 from greatsage.planning.models import Plan, PlanStatus, Step
 from greatsage.planning.service import PlanningService
-from greatsage.planning.verify import verify_plan
+from greatsage.planning.verify import KNOWN_TOOLS, verify_plan
+from greatsage.tools.service import ToolService
+
+
+def test_known_tools_match_started_registry(tmp_path: Path, valid_config_yaml: Path) -> None:
+    # Drift guard: verify's allowlist must equal the tools ToolService.start
+    # actually registers (defaults + voice/vision toolsets).
+    service = ToolService()
+    service.start(load_config(str(valid_config_yaml)).config)
+    assert set(KNOWN_TOOLS) == set(service.registry().list_ids())
 
 
 def step(sid: str, seq: int, tool: str, risk: str = "low", **kw: object) -> Step:
@@ -58,7 +67,7 @@ def test_verify_rejects_cycle() -> None:
 
 def _service(tmp_path: Path) -> PlanningService:
     d = str(tmp_path).replace("\\", "/")
-    cfg_path = tmp_path / "jarvis.yaml"
+    cfg_path = tmp_path / "sage.yaml"
     cfg_path.write_text(
         f"""
 core:

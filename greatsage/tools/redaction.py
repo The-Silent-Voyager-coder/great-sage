@@ -7,7 +7,7 @@ token that would otherwise land verbatim in ``audit.log`` or the event bus.
 prefixes, PEM private-key blocks, JWT-shaped tokens) so ordinary prose —
 including words like "password" in documentation — passes through unchanged.
 
-Key-shaped *names* are handled by `jarvis.tools.environment.is_secret_name`;
+Key-shaped *names* are handled by `greatsage.tools.environment.is_secret_name`;
 this module handles secret-shaped *values*.
 """
 

@@ -43,6 +43,7 @@ DEFAULTS: dict[str, object] = {
                 "enabled": False,
                 "base_url": "http://127.0.0.1:4096",
                 "api_key_env": "",
+                "username_env": "",
                 "model": "",
                 "timeout_seconds": 300.0,
             },
