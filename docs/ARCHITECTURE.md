@@ -102,6 +102,7 @@ verifies results before claiming success.
 | `security/` | Reserved (empty by design — Phase 9 ships as `tools/redaction.py` + policy tightening) | 9 (patch) |
 | `vision/` | Bounded capture (real GDI on Windows), local VLM grounding (Ollama, stub fallback), permissioned tools | 8 |
 | `interface/` | Local-first HUD status/dashboard (read-only; no `hud/` module) | 10 |
+| `control/` | Loopback HTTP control plane: token-gated dashboard, pending approvals, bounded agent runs (presentation only) | 10 + trust |
 | `integration/` | Reserved (empty — OpenCode wire lives in `intelligence/opencode.py` + `delegation/`) | 5 (via 5B) |
 | `storage/` | Local filesystem layout, archive policy (Google Drive = external archive only) | 1 |
 | `tests/` | Unit suites per module + CLI integration tests (in-process fake servers; no network) | all |
@@ -111,6 +112,7 @@ verifies results before claiming success.
 `core` → `events`, `configuration`, `observability` (always available)
 `core` → `intelligence`, `memory`, `tools` (subsystems)
 `core` → `vision`, `voice`, `scheduler`, `telegram`, `workspace`, `planning`, `task` (subsystems)
+`control` → `agent`, `interface` (presentation/control only; never calls a tool directly)
 `intelligence/opencode.py` (the OpenCode wire) depends on provider interfaces, never the reverse.
 
 Rules:

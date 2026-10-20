@@ -242,3 +242,25 @@ The agent loop never weakens the tool security pipeline:
 - **Secrets stay out of context.** Memory retrieval for the loop is bounded
   (`_MEMORY_REFERENCE_LIMIT = 5`) and degrades silently on failure; results
   are never auto-saved to long-term memory.
+
+## 13. Local Control Plane (`greatsage serve`)
+
+The interactive dashboard is a control surface, not a second execution path:
+
+- **Loopback only.** The server refuses non-loopback binds. Requests must
+  carry the per-server page token (`X-GreatSage-Token`) for every `/api/*`
+  call, and the `Host` header must match the bound loopback endpoint
+  (DNS-rebinding defense).
+- **No direct tools.** Starting a run calls `AgentService.run`; every tool
+  call still crosses the standard `ToolService.execute` pipeline (policy,
+  path checks, approval, bounded execution, audit events).
+- **Approvals remain pending-only.** The UI can approve/reject only request
+  ids currently in the broker queue; stale ids are rejected. Argument
+  previews are redacted and bounded, and the broker itself never approves.
+- **One run at a time.** The control plane rejects a second run while one is
+  active; cancellation rejects outstanding approvals and requests cooperative
+  cancellation through the existing agent token.
+- **No remote access by default.** There is no CORS, no static-file server,
+  no arbitrary URL fetch, and no endpoint that grants a permission scope. A
+  future remote surface would need explicit authentication and a separate
+  security review.

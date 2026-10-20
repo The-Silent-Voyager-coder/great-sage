@@ -192,6 +192,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="episodic look-back in days (must be >= 1; default 1)",
     )
 
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="local control plane (loopback dashboard + human approvals)",
+    )
+    serve_parser.add_argument(
+        "--config", metavar="PATH", default=None, help="configuration file to use"
+    )
+    serve_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="loopback host (default: 127.0.0.1; localhost accepted)",
+    )
+    serve_parser.add_argument(
+        "--port", type=int, default=8765, help="local port (default: 8765)"
+    )
+
     chat_parser = subparsers.add_parser("chat", help="conversation loop (voice or text)")
     chat_parser.add_argument(
         "--config", metavar="PATH", default=None, help="configuration file to use"
@@ -2338,6 +2354,45 @@ def _cmd_telegram_listen(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+# --- control plane -------------------------------------------------------
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    from greatsage.control.server import ControlServer
+    from greatsage.control.state import ControlValidationError
+
+    if args.host not in ("127.0.0.1", "localhost"):
+        print(
+            "greatsage serve: the control plane only binds to loopback "
+            "(127.0.0.1 or localhost)",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID
+    try:
+        runtime = _runtime_from_args(args)
+    except ConfigurationError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_INVALID
+    try:
+        server = ControlServer(runtime, host=args.host, port=args.port)
+    except (OSError, ControlValidationError) as exc:
+        print(f"greatsage serve: {exc}", file=sys.stderr)
+        asyncio.run(runtime.stop())
+        return EXIT_FAILURE
+    print("Great Sage Control Plane")
+    print(f"  url    {server.url}")
+    print("  scope  loopback only; mutating API calls require the page token")
+    print("  stop   Ctrl+C")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\ncontrol plane stopped", file=sys.stderr)
+    finally:
+        server.stop()
+        asyncio.run(runtime.stop())
+    return EXIT_OK
+
+
 # --- hud -----------------------------------------------------------------
 
 
@@ -2872,6 +2927,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_briefing(args)
     if args.command == "chat":
         return _cmd_chat(args)
+    if args.command == "serve":
+        return _cmd_serve(args)
     if args.command == "ai":
         if args.ai_command == "health":
             return _cmd_ai_health(args)

@@ -345,3 +345,12 @@ down = save stands, vector missing); explicit `--semantic` search fails
 loudly instead of falling back. Vectors live in the local
 `memory_embeddings` table and die with their memory (`forget`/`delete`).
 CLI: `greatsage memory search QUERY --semantic`, `greatsage memory reindex`.
+
+## 14. Local Control Plane (no config section)
+
+`greatsage serve` has no `control.*` YAML keys: it is a runtime presentation
+surface over the existing subsystems. Bind/port are CLI flags only
+(`--host 127.0.0.1` / `--port 8765`), and non-loopback hosts are refused.
+The page token is generated per process; it is never written to config,
+logs, or events. See `docs/INTERFACES.md` §13 and `docs/SECURITY_MODEL.md`
+§13.

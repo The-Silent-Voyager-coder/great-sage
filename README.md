@@ -32,7 +32,9 @@ not adding another surface:
   task-scoped approval provider rather than a global auto-approval switch.
 - Provider health recovers to `READY` after a successful probe.
 - Failed task steps are retried on explicit resume.
-- Full suite: **1,173 tests collected**, passing; `ruff` and `mypy` clean.
+- Local control plane: `greatsage serve` exposes a loopback-only dashboard
+  for pending approvals and bounded agent runs through the same pipeline.
+- Full suite: **1,180 tests collected**, passing; `ruff` and `mypy` clean.
 
 ## Phase 4 — Tool System
 
@@ -161,7 +163,8 @@ great-sage/          → repository root
 │   ├── voice/           → wake word, STT, TTS local-first pipeline (Phase 6)
 │   ├── vision/          → bounded capture, grounding, permissioned tools (Phase 8)
 │   ├── interface/       → local-first HUD status/dashboard (Phase 10)
-│   └── ...              → autonomy (Phase 7, later)
+│   ├── control/         → loopback control plane + approval dashboard
+│   └── ...              → autonomy graph/verify, scheduler, telegram
 ├── tests/           → test suite (per-module subdirectories)
 ├── .env.example     → secret template (real secrets never committed)
 └── pyproject.toml   → project metadata; runtime deps tracked in docs/DEPENDENCY_POLICY.md §5
@@ -218,6 +221,10 @@ python -m venv .venv
 .\.venv\Scripts\greatsage.exe agent run --prompt "summarize this repo"
 .\.venv\Scripts\greatsage.exe agent run --prompt "check the system" --json
 # runs are always bounded: step/tool-call/wall-clock limits with ceilings
+
+# local control plane: loopback dashboard for approvals + bounded agent runs
+.\.venv\Scripts\greatsage.exe serve --port 8765
+# open http://127.0.0.1:8765/; prompt approvals still gate ASK-level tools
 
 # inspect and drive controlled delegation (needs OpenCode server at 127.0.0.1:4096)
 .\.venv\Scripts\greatsage.exe delegation health

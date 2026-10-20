@@ -724,3 +724,32 @@ subsystem, or non-completed task state; `2` invalid input/configuration
   are implemented (`greatsage/planning/graph.py` + `verify.py`,
   `greatsage/tools/redaction.py` + policy tightening — see `docs/AUTONOMY.md`
   and `docs/SECURITY_MODEL.md` §10).
+
+## 13. Local Control Plane (`greatsage serve`)
+
+A loopback-only presentation/control surface over the existing services. It
+does **not** add a tool path: runs still go through `AgentService`, tool calls
+still go through `ToolService.execute`, and approvals still use
+`ApprovalBroker` + the `ASK` gate.
+
+```text
+greatsage serve [--host 127.0.0.1] [--port 8765] [--config PATH]
+```
+
+- Binds loopback only (`127.0.0.1`/`localhost`); non-loopback hosts are
+  refused. The HTML page carries a per-server token; every `/api/*` request
+  must send `X-GreatSage-Token`, and the `Host` header must match the bound
+  loopback endpoint (DNS-rebinding defense).
+- `GET /` — offline dashboard (no external assets).
+- `GET /api/state` — HUD status, agent health, current/last run, pending
+  approvals (redacted/bounded argument previews).
+- `POST /api/agent` — `{prompt, session_id?, provider?, model?, max_steps?}`;
+  starts one bounded agent run and returns `202`. Only one run may be active.
+- `POST /api/agent/cancel` — reject outstanding approvals and request
+  cancellation.
+- `POST /api/approvals/<request_id>/approve|reject` — decide only a currently
+  pending request; stale ids return `404`.
+- Prompt/body limits are enforced locally; `max_steps` is bounded to 25.
+
+The read-only `interface` HUD remains unchanged; `control/` is the separate,
+interactive module.

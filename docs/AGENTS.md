@@ -94,6 +94,9 @@ Tool calls carry structured arguments only (`id`, `tool_id`, `arguments`,
   bounded wait deny; Ctrl+C rejects outstanding requests and cancels the run.
   The broker exposes `pending()`/`approve()`/`reject()` for a future UI without
   changing the tool pipeline or granting it any new authority.
+- The local control plane (`greatsage serve`) uses that same broker for its
+  approve/reject buttons and starts runs through `AgentService.run`; it adds
+  no direct tool path and no approval authority of its own.
 
 ## 6. Cancellation and Timeouts
 
