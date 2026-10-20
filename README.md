@@ -16,14 +16,14 @@ long-running objectives, and recover from failures.
 | Platform | Windows 11 |
 | Cost | ₹0 / $0 — no paid APIs, no paid hosting, no paid cloud |
 | Language | Python 3.11+ |
-| Status | **Phases 1–10 implemented** — trust hardening + interactive approvals in progress |
+| Status | **Phases 1–10 implemented** — trust hardening + local control plane |
 
 ---
 
 ## Current Status (October 2026)
 
-Phases 1–10 are implemented. The current focus is hardening the trust layer,
-not adding another surface:
+Phases 1–10 are implemented. The current focus is the trust layer and the
+human control surface around it:
 
 - Append-only, redacted audit log; CLI tool/agent events are no longer dropped.
 - Interactive approvals: `greatsage agent run --interactive` pauses on every
