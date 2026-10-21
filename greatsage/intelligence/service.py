@@ -31,7 +31,6 @@ from greatsage.intelligence.models import (
     AIRequest,
     AIResponse,
     StreamChunk,
-    format_response,
 )
 from greatsage.intelligence.ollama import OllamaProvider
 from greatsage.intelligence.opencode import OpenCodeProvider
@@ -144,7 +143,7 @@ class IntelligenceService:
                 "model": response.model,
                 "duration_ms": (time.monotonic() - started) * 1000.0,
                 "finish_reason": response.finish_reason.value,
-                "content": format_response(response)[:200],
+                "content_length": len(response.content or ""),
                 "task_id": request.metadata.get("task_id"),
             },
         )
@@ -180,7 +179,7 @@ class IntelligenceService:
                         "request_id": request.request_id,
                         "provider": provider.provider_id(),
                         "duration_ms": (time.monotonic() - started) * 1000.0,
-                        "content": text[:200],
+                        "content_length": len(text),
                         "task_id": request.metadata.get("task_id"),
                     },
                 )
