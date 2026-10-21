@@ -2252,45 +2252,52 @@ def _telegram_status_text(runtime: Runtime) -> str:
 def _telegram_screenshot_reply(runtime: Runtime, allow: bool) -> object:
     """Capture the screen for Telegram. Pixels only with operator opt-in.
 
-    NOTE: Telegram commands bypass the interactive ASK gate by design
-    (nobody is at the keyboard), so screenshots require BOTH the chat
+    NOTE: Telegram has no interactive approval prompt (nobody is at the
+    keyboard), so screenshots require BOTH the chat
     allowlist AND `listen --content` — the operator's explicit standing
-    approval for secret-dense pixels to leave the machine.
+    approval for secret-dense pixels to leave the machine. The capture still
+    runs through ToolService (policy, path checks, approval, audit).
     """
     if not allow:
         return "screenshots need listen --content (secret-dense pixels stay home otherwise)."
     try:
         import time as _time
 
-        from greatsage.tools.gui_tools import GuiScreenshotTool
-        from greatsage.tools.models import ToolContext
+        from greatsage.telegram.approval import TelegramScreenshotApprovalProvider
 
-        # Through the public tool (path policy enforced); the file copy stays
-        # on disk so the operator can audit exactly what left the machine.
+        # The tool call still crosses ToolService: policy, path checks,
+        # approval, and TOOL_* audit events are identical to every other run.
         stamp = _time.strftime("%Y%m%dT%H%M%S")
-        shot = runtime.config.tools.working_directory / "telegram" / f"shot-{stamp}.bmp"
-        try:
-            resolved = shot.resolve()
-        except OSError as exc:
-            return f"screenshot unavailable: {exc}"[:200]
-        from greatsage.tools.pathsecurity import is_within
-
-        roots = list(runtime.config.tools.allowed_roots)
-        if roots and not any(is_within(resolved, r) for r in roots):
-            return "screenshot refused: working directory outside allowed roots."
-        context = ToolContext(
-            working_directory=runtime.config.tools.working_directory,
-            environment={},
-            timeout_seconds=30.0,
-            max_output_bytes=8_388_608,
+        filename = f"shot-{stamp}-{uuid.uuid4().hex[:8]}.bmp"
+        shot = runtime.config.tools.working_directory / "telegram" / filename
+        request = ToolRequest(
+            request_id=f"telegram-screenshot-{uuid.uuid4().hex}",
+            tool_id="gui.screenshot",
+            arguments={"out": str(shot)},
+            source="telegram",
         )
-        result = GuiScreenshotTool().execute({"out": str(shot)}, context)
+        previous = runtime.tools.approval
+        runtime.tools.approval = TelegramScreenshotApprovalProvider(previous)
+        try:
+            result = runtime.tools.execute(request)
+        finally:
+            runtime.tools.approval = previous
         if not result.success:
             return f"screenshot unavailable: {result.error or 'unknown'}"[:200]
-        data = shot.read_bytes()
         output = result.output or {}
+        saved_to = output.get("saved_to")
+        if not isinstance(saved_to, str) or not saved_to:
+            return "screenshot unavailable: tool returned no saved file"
+        data = Path(saved_to).read_bytes()
         caption = f"screen {output.get('width', '?')}x{output.get('height', '?')}"
         return {"photo": data, "caption": caption}
+    except (
+        ToolNotFoundError,
+        ToolPermissionDeniedError,
+        ToolUnavailableError,
+        ToolValidationError,
+    ) as exc:
+        return f"screenshot unavailable: {exc}"[:200]
     except Exception as exc:
         return f"screenshot unavailable: {exc}"[:200]
 

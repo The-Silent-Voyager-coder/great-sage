@@ -267,17 +267,23 @@ Coverage:
 
 ## 6g. Trust/control baseline (October 2026)
 
-- **1,182 tests collected**; full suite green, `ruff` + `mypy` clean
-  (139 source files).
+- **1,208 tests collected**; full suite green, `ruff` + `mypy` clean
+  (141 source files).
 - New suites: `tests/unit/agent/test_agent_approval_broker.py` (pending-only
   decisions, redacted previews, timeout cleanup), `tests/unit/observability/
   test_audit.py` (append-only + redaction), `tests/unit/control/` (loopback
   server, token/Host gate, broker-backed approve/reject, one-run limit,
-  non-loopback refusal), and `tests/integration/test_cli_serve.py` (serve
-  wiring/refusal).
+  non-loopback refusal), `tests/integration/test_cli_serve.py` (serve
+  wiring/refusal), `tests/unit/telegram/test_telegram_screenshot.py`
+  (scoped approval, ToolService delegation), and
+  `tests/unit/tools/test_network_security.py` (public-only targets,
+  redirect validation).
 - Trust regressions covered: CLI events reach the audit sink; task run
   requires a READY plan; `--approve` is task-scoped; failed task steps retry
-  on resume; provider health recovers to READY after a successful probe.
+  on resume; provider health recovers to READY after a successful probe;
+  Telegram screenshots use ToolService (not a direct tool call); network
+  tools reject loopback/private/metadata targets and private redirects;
+  `AIRequestCompleted`/`AIStreamCompleted` carry metadata, never text.
 - The control-plane suite runs a real loopback HTTP server in a thread with a
   fake runtime; no external network, no model calls, no real tool execution.
   Request bodies are drained before auth responses to avoid Windows RST

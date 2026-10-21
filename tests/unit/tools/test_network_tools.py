@@ -15,6 +15,15 @@ from greatsage.tools.models import ToolCategory, ToolContext, ToolRisk
 from greatsage.tools.network_tools import NetworkFetchTool, NetworkWebfetchTool
 
 
+@pytest.fixture(autouse=True)
+def _public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep URL validation offline; private-target tests override this."""
+    monkeypatch.setattr(
+        "greatsage.tools.network_security.resolve_host",
+        lambda host, port=None: ("93.184.216.34",),
+    )
+
+
 def _context() -> ToolContext:
     return ToolContext(
         working_directory=Path("."),
@@ -60,7 +69,8 @@ def test_tool_declarations() -> None:
 
 def test_fetch_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "urllib.request.urlopen", lambda req, timeout=None: _FakeResponse(b"hello world")
+        "greatsage.tools.network_tools._open_url",
+        lambda req, timeout=None: _FakeResponse(b"hello world"),
     )
     result = NetworkFetchTool().execute({"url": "https://example.com/"}, _context())
     assert result.success is True
@@ -72,7 +82,8 @@ def test_fetch_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_fetch_truncates(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "urllib.request.urlopen", lambda req, timeout=None: _FakeResponse(b"x" * 100)
+        "greatsage.tools.network_tools._open_url",
+        lambda req, timeout=None: _FakeResponse(b"x" * 100),
     )
     result = NetworkFetchTool().execute(
         {"url": "https://example.com/", "max_bytes": 10}, _context()
@@ -94,9 +105,43 @@ def test_fetch_rejects_bad_urls() -> None:
     assert tool.execute(bad_size, _context()).success is False
 
 
+@pytest.mark.parametrize(
+    ("url", "resolved"),
+    [
+        ("http://127.0.0.1/", "127.0.0.1"),
+        ("http://localhost/", "127.0.0.1"),
+        ("http://[::1]/", "::1"),
+        ("http://169.254.169.254/latest/meta-data/", "169.254.169.254"),
+        ("http://10.0.0.1/", "10.0.0.1"),
+    ],
+)
+def test_fetch_refuses_private_targets(
+    monkeypatch: pytest.MonkeyPatch, url: str, resolved: str
+) -> None:
+    monkeypatch.setattr(
+        "greatsage.tools.network_security.resolve_host",
+        lambda host, port=None: (resolved,),
+    )
+    result = NetworkFetchTool().execute({"url": url}, _context())
+    assert result.success is False
+    assert "non-public" in (result.error or "")
+
+
+def test_webfetch_refuses_private_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "greatsage.tools.network_security.resolve_host",
+        lambda host, port=None: ("10.0.0.5",),
+    )
+    result = NetworkWebfetchTool().execute(
+        {"url": "https://internal.example/"}, _context()
+    )
+    assert result.success is False
+    assert "non-public" in (result.error or "")
+
+
 def test_fetch_refuses_binary(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "urllib.request.urlopen",
+        "greatsage.tools.network_tools._open_url",
         lambda req, timeout=None: _FakeResponse(b"\x89PNG\x00binary"),
     )
     result = NetworkFetchTool().execute({"url": "https://example.com/a.png"}, _context())
@@ -107,7 +152,7 @@ def test_fetch_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
     def boom(req: object, timeout: object = None) -> _FakeResponse:
         raise urllib.error.HTTPError(str(req), 404, "nope", {}, io.BytesIO())
 
-    monkeypatch.setattr("urllib.request.urlopen", boom)
+    monkeypatch.setattr("greatsage.tools.network_tools._open_url", boom)
     result = NetworkFetchTool().execute({"url": "https://example.com/missing"}, _context())
     assert result.success is False
     assert "404" in (result.error or "")
@@ -142,7 +187,7 @@ def test_webfetch_declarations() -> None:
 
 def test_webfetch_markdown_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "urllib.request.urlopen",
+        "greatsage.tools.network_tools._open_url",
         lambda req, timeout=None: _html_response(_HTML_PAGE),
     )
     result = NetworkWebfetchTool().execute({"url": "https://example.com/start"}, _context())
@@ -163,7 +208,7 @@ def test_webfetch_markdown_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_webfetch_text_format_drops_decorations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "urllib.request.urlopen",
+        "greatsage.tools.network_tools._open_url",
         lambda req, timeout=None: _html_response(_HTML_PAGE),
     )
     result = NetworkWebfetchTool().execute(
@@ -179,7 +224,7 @@ def test_webfetch_text_format_drops_decorations(monkeypatch: pytest.MonkeyPatch)
 
 def test_webfetch_char_cap_truncates(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "urllib.request.urlopen",
+        "greatsage.tools.network_tools._open_url",
         lambda req, timeout=None: _html_response(_HTML_PAGE),
     )
     result = NetworkWebfetchTool().execute(
@@ -194,7 +239,10 @@ def test_webfetch_char_cap_truncates(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_webfetch_plain_text_passthrough(monkeypatch: pytest.MonkeyPatch) -> None:
     response = _FakeResponse(b"plain body")
     response.headers = _FakeHeaders("text/plain")
-    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: response)
+    monkeypatch.setattr(
+        "greatsage.tools.network_tools._open_url",
+        lambda req, timeout=None: response,
+    )
     result = NetworkWebfetchTool().execute({"url": "https://example.com/robots.txt"}, _context())
     assert result.success is True
     output = result.output or {}
@@ -205,7 +253,10 @@ def test_webfetch_plain_text_passthrough(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_webfetch_rejects_unsupported_content_type(monkeypatch: pytest.MonkeyPatch) -> None:
     response = _FakeResponse(b"\x00\x01bin")
     response.headers = _FakeHeaders("application/octet-stream")
-    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: response)
+    monkeypatch.setattr(
+        "greatsage.tools.network_tools._open_url",
+        lambda req, timeout=None: response,
+    )
     result = NetworkWebfetchTool().execute({"url": "https://example.com/file.bin"}, _context())
     assert result.success is False
     assert "content" in (result.error or "")
@@ -214,7 +265,7 @@ def test_webfetch_rejects_unsupported_content_type(monkeypatch: pytest.MonkeyPat
 def test_webfetch_redacts_secret_shaped_content(monkeypatch: pytest.MonkeyPatch) -> None:
     page = b"<html><body><p>token sk-ABCDEFGHIJKLMNOPQRSTUV leaked</p></body></html>"
     monkeypatch.setattr(
-        "urllib.request.urlopen", lambda req, timeout=None: _html_response(page)
+        "greatsage.tools.network_tools._open_url", lambda req, timeout=None: _html_response(page)
     )
     result = NetworkWebfetchTool().execute({"url": "https://example.com/"}, _context())
     content = (result.output or {})["content"]
@@ -237,7 +288,7 @@ def test_webfetch_rejects_bad_format_and_http_error(monkeypatch: pytest.MonkeyPa
     def boom(req: object, timeout: object = None) -> _FakeResponse:
         raise urllib.error.HTTPError(str(req), 503, "down", {}, io.BytesIO())
 
-    monkeypatch.setattr("urllib.request.urlopen", boom)
+    monkeypatch.setattr("greatsage.tools.network_tools._open_url", boom)
     result = tool.execute({"url": "https://example.com/"}, _context())
     assert result.success is False
     assert "503" in (result.error or "")

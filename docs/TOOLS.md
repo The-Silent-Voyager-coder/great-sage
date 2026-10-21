@@ -178,6 +178,11 @@ the request is denied — a fail-closed default.
 | `voice.listen`/`speak`/`wake` | safe | transcription, synthesis, wake-word check (bounded, metadata-only outputs) |
 | `vision.capture`/`describe` | safe | bounded screen frame + local VLM grounding (metadata + regions, never pixels) |
 
+`network.fetch` and `network.webfetch` resolve the target host and reject
+non-global addresses (loopback, private, link-local, metadata, multicast,
+reserved); redirect targets are revalidated before they are followed. They
+never send credentials and never accept non-HTTP(S) schemes.
+
 Game-automation note: the `gui.*` tools are hands, not a player. Botting
 violates most games' terms (Supercell bans CoC botting accounts), so
 unattended game loops need explicit per-game operator approval — see

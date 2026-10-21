@@ -72,6 +72,23 @@ def test_generate_failure_publishes_failure(service: IntelligenceService) -> Non
     assert AI_REQUEST_FAILED in events
 
 
+def test_generate_completion_event_has_no_content(
+    service: IntelligenceService,
+) -> None:
+    events: list[Event] = []
+    service.publisher = lambda event: events.append(event)
+    service.register_mock()
+    service.start(None)
+
+    response = service.generate(AIRequest(messages=[Message.user("secret prompt")]))
+
+    completed = next(event for event in events if event.type == AI_REQUEST_COMPLETED)
+    assert "content" not in completed.payload
+    assert completed.payload["content_length"] == len(response.content)
+    assert "secret prompt" not in str(completed.payload)
+    assert response.content not in str(completed.payload)
+
+
 def test_generate_validation_rejected(service: IntelligenceService) -> None:
     service.register_mock()
     service.start(None)
@@ -125,6 +142,27 @@ def test_stream_via_facade(service: IntelligenceService) -> None:
     assert any(c.kind == "completion" for c in chunks)
     assert AI_STREAM_STARTED in events
     assert AI_STREAM_COMPLETED in events
+
+
+def test_stream_completion_event_has_no_content(service: IntelligenceService) -> None:
+    from greatsage.intelligence.provider import Capability
+
+    events: list[Event] = []
+    service.publisher = lambda event: events.append(event)
+    service.register_mock(capabilities={Capability.STREAMING})
+    service.start(None)
+
+    async def scenario():
+        request = AIRequest(messages=[Message.user("stream secret")])
+        return [chunk async for chunk in service.stream(request)]
+
+    chunks = run(scenario())
+    text = "".join(c.text for c in chunks if c.kind == "text")
+    completed = next(event for event in events if event.type == AI_STREAM_COMPLETED)
+    assert "content" not in completed.payload
+    assert completed.payload["content_length"] == len(text)
+    assert "stream secret" not in str(completed.payload)
+    assert text not in str(completed.payload)
 
 
 def test_stop_marks_providers_stopped(service: IntelligenceService) -> None:

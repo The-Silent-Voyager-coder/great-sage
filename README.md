@@ -34,7 +34,7 @@ human control surface around it:
 - Failed task steps are retried on explicit resume.
 - Local control plane: `greatsage serve` exposes a loopback-only dashboard
   for pending approvals and bounded agent runs through the same pipeline.
-- Full suite: **1,182 tests collected**, passing; `ruff` and `mypy` clean.
+- Full suite: **1,208 tests collected**, passing; `ruff` and `mypy` clean.
 
 ## Phase 4 — Tool System
 
