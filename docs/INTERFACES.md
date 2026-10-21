@@ -677,9 +677,10 @@ class TaskService:        # greatsage/task/service.py
     def run(self, plan: str, *, approved: bool = False) -> TaskReport: ...
     # Plan file (.yaml/.json) or plan_id; plan must be READY. approved=True
     # installs a task-scoped approval provider (critical remains denied).
-    def resume(self, task_id: str) -> TaskReport: ...
+    def resume(self, task_id: str, *, approved: bool = False) -> TaskReport: ...
     # FAILED/TIMED_OUT tasks reopen; successful steps are skipped and failed
-    # steps are retried.
+    # steps are retried. approved=True installs the same task-scoped provider
+    # as run(approved=True); critical tools remain denied.
     def list(self, limit: int = 50) -> list[dict]: ...
     def get(self, task_id: str) -> dict: ...
     def cancel(self, task_id: str) -> dict: ...
@@ -700,7 +701,7 @@ greatsage planning verify <plan_id> [--config PATH] [--json]
 greatsage planning approve <plan_id> [--config PATH] [--json]
 greatsage planning health [--config PATH] [--json]
 greatsage task run PLAN [--approve] [--verify-only] [--config PATH] [--json]
-greatsage task resume <task_id> [--config PATH] [--json]
+greatsage task resume <task_id> [--approve] [--config PATH] [--json]
 greatsage task list [--limit N] [--config PATH] [--json]
 greatsage task get <task_id> [--config PATH] [--json]
 greatsage task cancel <task_id> [--config PATH] [--json]
@@ -728,7 +729,8 @@ subsystem, or non-completed task state; `2` invalid input/configuration
 ## 13. Local Control Plane (`greatsage serve`)
 
 A loopback-only presentation/control surface over the existing services. It
-does **not** add a tool path: runs still go through `AgentService`, tool calls
+does **not** add a tool path: agent runs go through `AgentService`, plan/task
+runs go through `TaskService.run`/`resume` with explicit approval, tool calls
 still go through `ToolService.execute`, and approvals still use
 `ApprovalBroker` + the `ASK` gate.
 
@@ -741,14 +743,32 @@ greatsage serve [--host 127.0.0.1] [--port 8765] [--config PATH]
   must send `X-GreatSage-Token`, and the `Host` header must match the bound
   loopback endpoint (DNS-rebinding defense).
 - `GET /` — offline dashboard (no external assets).
-- `GET /api/state` — HUD status, agent health, current/last run, pending
-  approvals (redacted/bounded argument previews).
+- `GET /api/state` — HUD status, agent/planning/task health, current/last
+  execution, pending approvals, and bounded plan/task summaries.
+- `GET /api/plans` / `GET /api/plans/<plan_id>` — read-only plan summaries and
+  detail (steps, tool ids, risk estimates, redacted/bounded argument previews).
+- `POST /api/plans/<plan_id>/approve` — body `{"approved": true}`; runs the
+  existing planning verification/human gate (DRAFT → READY).
+- `POST /api/plans/<plan_id>/run` — body `{"approved": true}`; only READY
+  plans, starts `TaskService.run(plan_id, approved=True)`, returns `202`.
+- `GET /api/tasks` / `GET /api/tasks/<task_id>` — read-only task history/detail;
+  step output is omitted, and errors are redacted/bounded.
+- `POST /api/tasks/<task_id>/cancel` — request cancellation through
+  `TaskService.cancel` (works for the active task and persisted pending/paused
+  tasks).
+- `POST /api/tasks/<task_id>/resume` — body `{"approved": true}`; resumes a
+  failed/timed-out/paused/pending task through
+  `TaskService.resume(task_id, approved=True)`.
 - `POST /api/agent` — `{prompt, session_id?, provider?, model?, max_steps?}`;
-  starts one bounded agent run and returns `202`. Only one run may be active.
-- `POST /api/agent/cancel` — reject outstanding approvals and request
-  cancellation.
+  starts one bounded agent run and returns `202`.
+- `POST /api/run/cancel` (alias `/api/agent/cancel`) — reject outstanding
+  approvals and request cancellation of the active agent or task run.
 - `POST /api/approvals/<request_id>/approve|reject` — decide only a currently
   pending request; stale ids return `404`.
+- One execution at a time is enforced across agent and task runs; a second
+  start returns `409`. Plan approval/run and task resume require explicit
+  `{"approved": true}` in the body, and a plan must already be READY before it
+  can run. `critical` tools remain denied in every mode.
 - Prompt/body limits are enforced locally; `max_steps` is bounded to 25.
 
 The read-only `interface` HUD remains unchanged; `control/` is the separate,

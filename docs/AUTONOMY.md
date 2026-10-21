@@ -12,9 +12,9 @@
 | Plans | linear step list (sequence 1..n) | + optional `depends_on` task-graph (DAG) |
 | Execution order | sequence order | topological order (linear plans unchanged) |
 | Pre-run check | `Plan.validate()` (structure) | + `verify_plan()` (tools, risks, deps, cycles) |
-| Human gate | none (ToolService approvals only) | `planning approve` (draft→ready) + `task run --approve` recorded |
+| Human gate | none (ToolService approvals only) | `planning approve` (draft→ready) + `task run --approve` / `task resume --approve` recorded |
 | Audit | `PlanCreated/Failed`, `Task*`, `TaskStep*` | + `PlanVerified`, `PlanApproved`, `approved` flag on `TaskStarted` |
-| CLI | `workspace`, `task` | + `planning` group, `task run --verify-only/--approve` |
+| CLI | `workspace`, `task` | + `planning` group, `task run --verify-only/--approve`, `task resume --approve` |
 
 The agent loop (`greatsage/agent/`) is unchanged: it still proposes one tool
 call per step through `ToolService.execute`. Task-graph execution is the

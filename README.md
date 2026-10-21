@@ -33,8 +33,9 @@ human control surface around it:
 - Provider health recovers to `READY` after a successful probe.
 - Failed task steps are retried on explicit resume.
 - Local control plane: `greatsage serve` exposes a loopback-only dashboard
-  for pending approvals and bounded agent runs through the same pipeline.
-- Full suite: **1,208 tests collected**, passing; `ruff` and `mypy` clean.
+  for pending approvals, bounded agent runs, and explicit approved READY
+  plan/task runs through the same pipeline.
+- Full suite: **1,219 tests collected**, passing; `ruff` and `mypy` clean.
 
 ## Phase 4 — Tool System
 
@@ -222,7 +223,7 @@ python -m venv .venv
 .\.venv\Scripts\greatsage.exe agent run --prompt "check the system" --json
 # runs are always bounded: step/tool-call/wall-clock limits with ceilings
 
-# local control plane: loopback dashboard for approvals + bounded agent runs
+# local control plane: approvals + bounded agent runs + approved READY plans
 .\.venv\Scripts\greatsage.exe serve --port 8765
 # open http://127.0.0.1:8765/; prompt approvals still gate ASK-level tools
 

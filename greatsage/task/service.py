@@ -130,6 +130,7 @@ class TaskService:
         assert self._planning_repo is not None
         assert self._executor is not None
         assert self._config is not None
+        assert self._tools is not None
 
     def _load_plan(self, plan_ref: str | Path | dict[str, Any]) -> Plan:
         # plan_ref may be path to yaml/json, or dict, or plan_id
@@ -219,12 +220,13 @@ class TaskService:
                 self._tools.approval = previous_approval
             self._tokens.pop(tid, None)
 
-    def resume(self, task_id: str) -> TaskReport:
+    def resume(self, task_id: str, *, approved: bool = False) -> TaskReport:
         self._require_available()
         assert self._repository is not None
         assert self._planning_repo is not None
         assert self._executor is not None
         assert self._config is not None
+        assert self._tools is not None
         record = self._repository.get_task(task_id)
         if record is None:
             raise TaskValidationError(f"task not found: {task_id}")
@@ -251,6 +253,10 @@ class TaskService:
             self._repository.update_task(record)
         if record.state not in (TaskState.PAUSED, TaskState.RUNNING, TaskState.PENDING):
             raise TaskValidationError(f"task not resumable in state {record.state.value}")
+        previous_approval = getattr(self._tools, "approval", None)
+        if approved:
+            record.metadata["human_approved"] = True
+            self._tools.approval = _TaskScopedApprovalProvider(task_id, previous_approval)
         token = CancellationToken()
         self._tokens[task_id] = token
         # Ensure publisher sync
@@ -269,6 +275,8 @@ class TaskService:
             )
             return report
         finally:
+            if approved:
+                self._tools.approval = previous_approval
             self._tokens.pop(task_id, None)
 
     def verify_plan(self, plan: str | Path | dict[str, Any] | Plan) -> dict[str, Any]:

@@ -13,7 +13,7 @@
 
 | Layer | Directory | Covers | Real services? |
 |---|---|---|---|
-| Unit | `tests/unit/<module>/` | logic of each subsystem in isolation (19 module dirs: core, configuration, events, observability, intelligence, memory, tools, agent, delegation, workspace, planning, task, scheduler, voice, vision, telegram, interface, chat, storage) | No |
+| Unit | `tests/unit/<module>/` | logic of each subsystem in isolation (20 module dirs: core, configuration, events, observability, intelligence, memory, tools, agent, delegation, workspace, planning, task, scheduler, voice, vision, telegram, interface, control, chat, storage) | No |
 | Integration | `tests/integration/` | end-to-end CLI paths (`test_cli*.py` per subsystem) over temp SQLite + fake HTTP servers | Local temp files only |
 
 Provider adapters (Ollama, OpenCode v2) are tested inside
@@ -267,8 +267,8 @@ Coverage:
 
 ## 6g. Trust/control baseline (October 2026)
 
-- **1,208 tests collected**; full suite green, `ruff` + `mypy` clean
-  (141 source files).
+- **1,219 tests collected**; full suite green, `ruff` + `mypy` clean
+  (142 source files).
 - New suites: `tests/unit/agent/test_agent_approval_broker.py` (pending-only
   decisions, redacted previews, timeout cleanup), `tests/unit/observability/
   test_audit.py` (append-only + redaction), `tests/unit/control/` (loopback
@@ -288,3 +288,13 @@ Coverage:
   fake runtime; no external network, no model calls, no real tool execution.
   Request bodies are drained before auth responses to avoid Windows RST
   flakes, and the dashboard token stays in the page meta tag (not a URL).
+- Control-plane task views/runs are covered by `tests/unit/control/
+  test_control_views.py` (redaction, truncation, step-output omission),
+  `tests/unit/control/test_control_server.py` (plan/task reads, explicit
+  approval bodies, READY gate, cross-kind one-execution limit, task
+  cancel/resume), and `tests/integration/test_control_plane_tasks.py` (real
+  runtime `TaskService.run` from the control state worker thread). The
+  latter also guards SQLite repository cross-thread use (`check_same_thread=
+  False` with the existing RLock), which the HTTP/worker split requires.
+- `tests/integration/test_cli_workspace_task.py` covers `task resume
+  --approve` retrying a medium-risk step under `security.mode: normal`.

@@ -37,9 +37,9 @@ deny   → refuse, log audit entry
 - Default mode is **`ask`** (`security.default_mode`).
 - READ actions within trusted roots may be auto-approved.
 - A grant is scoped + bounded (`ttl`, path prefix, task id) and revocable.
-- `greatsage task run --approve` installs a provider scoped to that task id;
-  requests for other tasks fall back to the previous provider (or deny), and
-  `critical` tools still never reach approval.
+- `greatsage task run --approve` and `task resume --approve` install a
+  provider scoped to that task id; requests for other tasks fall back to the
+  previous provider (or deny), and `critical` tools still never reach approval.
 - Previously denied actions require re-approval; auto-repeat of denied actions
   by an agent loop is blocked and logged.
 
@@ -268,15 +268,24 @@ The interactive dashboard is a control surface, not a second execution path:
   carry the per-server page token (`X-GreatSage-Token`) for every `/api/*`
   call, and the `Host` header must match the bound loopback endpoint
   (DNS-rebinding defense).
-- **No direct tools.** Starting a run calls `AgentService.run`; every tool
-  call still crosses the standard `ToolService.execute` pipeline (policy,
-  path checks, approval, bounded execution, audit events).
+- **No direct tools.** Starting an agent run calls `AgentService.run`; starting
+  a plan calls `TaskService.run(plan_id, approved=True)`. Every tool call still
+  crosses the standard `ToolService.execute` pipeline (policy, path checks,
+  approval, bounded execution, audit events).
+- **Plan execution is an explicit human gate.** Only `READY` plans can run;
+  plan approval and run require `{"approved": true}` in the request body. The
+  run installs a provider scoped to that task id — never a global
+  auto-approval switch — and `critical` tools remain denied. Task resume uses
+  the same explicit `approved=True` gate.
 - **Approvals remain pending-only.** The UI can approve/reject only request
   ids currently in the broker queue; stale ids are rejected. Argument
   previews are redacted and bounded, and the broker itself never approves.
-- **One run at a time.** The control plane rejects a second run while one is
-  active; cancellation rejects outstanding approvals and requests cooperative
-  cancellation through the existing agent token.
+- **One execution at a time.** The control plane rejects a second agent or
+  task run while one is active; cancellation rejects outstanding approvals and
+  requests cooperative cancellation through the existing agent/task token.
+- **Views are bounded and redacted.** Plan/task reads expose only decision
+  fields; plan argument previews are redacted/truncated, task step output is
+  omitted entirely, and task errors are redacted before display.
 - **No remote access by default.** There is no CORS, no static-file server,
   no arbitrary URL fetch, and no endpoint that grants a permission scope. A
   future remote surface would need explicit authentication and a separate
