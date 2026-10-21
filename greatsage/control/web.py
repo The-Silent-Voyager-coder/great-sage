@@ -131,6 +131,32 @@ INDEX_HTML = """<!doctype html>
     }
     .empty { color: var(--muted); padding: 6px 0; }
     .error { color: var(--danger); white-space: pre-wrap; }
+    .item {
+      border-bottom: 1px solid var(--line);
+      padding: 9px 0;
+      cursor: pointer;
+    }
+    .item:last-child { border-bottom: 0; }
+    .item:hover { background: rgba(255,255,255,.025); }
+    .item-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .detail {
+      border-top: 1px solid var(--line);
+      margin-top: 12px;
+      padding-top: 12px;
+    }
+    .step {
+      border-left: 2px solid var(--line);
+      padding: 7px 0 7px 10px;
+      margin: 7px 0;
+    }
+    .step.ok { border-left-color: #2f8a6a; }
+    .step.bad { border-left-color: #8a3b3b; }
+    .step .meta { color: var(--muted); font-size: 12px; }
     @media (max-width: 900px) {
       main { grid-template-columns: 1fr; }
       .row { grid-template-columns: 1fr; }
@@ -184,13 +210,25 @@ INDEX_HTML = """<!doctype html>
       </section>
 
       <section class="panel">
+        <h2>Plans</h2>
+        <div id="plans" class="empty">No plans.</div>
+        <div id="plan-detail"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Tasks</h2>
+        <div id="tasks" class="empty">No tasks.</div>
+        <div id="task-detail"></div>
+      </section>
+
+      <section class="panel">
         <h2>Pending approvals</h2>
         <div id="approvals" class="empty">No pending approvals.</div>
       </section>
 
       <section class="panel">
-        <h2>Last run</h2>
-        <div id="result" class="empty">No run yet.</div>
+        <h2>Last execution</h2>
+        <div id="result" class="empty">No execution yet.</div>
       </section>
     </div>
 
@@ -206,9 +244,10 @@ INDEX_HTML = """<!doctype html>
       <section class="panel">
         <h2>Safety</h2>
         <div class="muted">
-          The dashboard can only answer approvals that are currently pending and
-          start bounded agent runs. It cannot execute tools directly, approve
-          itself, or reach beyond loopback.
+          The dashboard answers only currently pending approvals, starts bounded
+          agent runs, and runs approved READY plans through TaskService. It
+          cannot execute tools directly, approve itself, or reach beyond
+          loopback. Critical tools remain denied.
         </div>
       </section>
     </div>
@@ -217,6 +256,9 @@ INDEX_HTML = """<!doctype html>
     const token = document.querySelector('meta[name="greatsage-token"]').content;
     const $ = (id) => document.getElementById(id);
     let refreshing = false;
+    let openPlanId = null;
+    let openTaskId = null;
+    let runActive = false;
 
     async function api(path, options = {}) {
       const headers = Object.assign(
@@ -239,6 +281,268 @@ INDEX_HTML = """<!doctype html>
       if (value !== undefined && value !== null) node.textContent = String(value);
       if (className) node.className = className;
       return node;
+    }
+
+    function badgeClass(status) {
+      const value = String(status || "").toLowerCase();
+      if (["ready", "completed", "healthy"].includes(value)) return "healthy";
+      if (["draft", "paused", "pending", "running", "degraded"].includes(value)) {
+        return "degraded";
+      }
+      return "unhealthy";
+    }
+
+    function renderPlans(items) {
+      const root = $("plans");
+      root.replaceChildren();
+      if (!items || items.length === 0) {
+        root.className = "empty";
+        root.textContent = "No plans.";
+        return;
+      }
+      root.className = "";
+      for (const plan of items) {
+        const item = text("div", null, "item");
+        const head = text("div", null, "item-head");
+        head.appendChild(text("strong", plan.goal || plan.id));
+        head.appendChild(
+          text("span", plan.status || "-", "badge " + badgeClass(plan.status))
+        );
+        item.appendChild(head);
+        item.appendChild(
+          text("div", (plan.step_count || 0) + " steps | " + plan.id, "muted")
+        );
+        item.addEventListener("click", () => showPlan(plan.id));
+        root.appendChild(item);
+      }
+    }
+
+    async function showPlan(id) {
+      if (openPlanId !== id) {
+        openPlanId = id;
+        const loading = $("plan-detail");
+        loading.replaceChildren();
+        loading.className = "detail";
+        loading.appendChild(text("div", "Loading plan...", "muted"));
+      }
+      try {
+        const data = await api("/api/plans/" + encodeURIComponent(id));
+        if (openPlanId !== id) return;
+        renderPlanDetail(data.plan || {});
+      } catch (err) {
+        if (openPlanId === id) {
+          $("plan-detail").replaceChildren(text("div", err.message, "error"));
+        }
+      }
+    }
+
+    function renderPlanDetail(plan) {
+      const root = $("plan-detail");
+      root.replaceChildren();
+      root.className = "detail";
+      root.appendChild(text("div", plan.goal || plan.id, ""));
+      root.appendChild(
+        text(
+          "div",
+          "status " + (plan.status || "-") + " | " +
+            ((plan.steps || []).length) + " step(s)",
+          "muted"
+        )
+      );
+      if (plan.workspace_root) {
+        root.appendChild(text("div", "workspace " + plan.workspace_root, "muted"));
+      }
+      for (const step of plan.steps || []) {
+        const card = text("div", null, "step");
+        card.appendChild(
+          text(
+            "div",
+            "#" + step.sequence + " " + (step.description || step.tool_id)
+          )
+        );
+        card.appendChild(
+          text(
+            "div",
+            (step.tool_id || "-") + " | risk " + (step.risk_estimate || "-"),
+            "meta"
+          )
+        );
+        if (step.depends_on && step.depends_on.length) {
+          card.appendChild(
+            text("div", "depends on " + step.depends_on.join(", "), "meta")
+          );
+        }
+        if (step.arguments_preview) {
+          card.appendChild(text("pre", step.arguments_preview, "mono"));
+        }
+        root.appendChild(card);
+      }
+      const actions = text("div", null, "actions");
+      if (plan.status === "draft") {
+        const approve = text("button", "Approve plan", "primary");
+        approve.addEventListener("click", () => approvePlan(plan.id));
+        actions.appendChild(approve);
+      } else if (plan.status === "ready") {
+        const run = text("button", "Approve and run", "primary");
+        run.disabled = runActive;
+        run.addEventListener("click", () => runPlan(plan.id));
+        actions.appendChild(run);
+      }
+      root.appendChild(actions);
+    }
+
+    async function approvePlan(id) {
+      try {
+        await api(
+          "/api/plans/" + encodeURIComponent(id) + "/approve",
+          {method: "POST", body: JSON.stringify({approved: true})}
+        );
+        await refresh();
+      } catch (err) {
+        $("run-error").textContent = err.message;
+      }
+    }
+
+    async function runPlan(id) {
+      if (runActive) return;
+      if (!confirm("Run this READY plan through TaskService?")) return;
+      try {
+        await api(
+          "/api/plans/" + encodeURIComponent(id) + "/run",
+          {method: "POST", body: JSON.stringify({approved: true})}
+        );
+        await refresh();
+      } catch (err) {
+        $("run-error").textContent = err.message;
+      }
+    }
+
+    function renderTasks(items) {
+      const root = $("tasks");
+      root.replaceChildren();
+      if (!items || items.length === 0) {
+        root.className = "empty";
+        root.textContent = "No tasks.";
+        return;
+      }
+      root.className = "";
+      for (const task of items) {
+        const item = text("div", null, "item");
+        const head = text("div", null, "item-head");
+        head.appendChild(text("strong", task.goal || task.id));
+        head.appendChild(
+          text("span", task.state || "-", "badge " + badgeClass(task.state))
+        );
+        item.appendChild(head);
+        item.appendChild(
+          text(
+            "div",
+            (task.completed_steps || 0) + "/" + (task.total_steps || 0) +
+              " steps | " + task.id,
+            "muted"
+          )
+        );
+        item.addEventListener("click", () => showTask(task.id));
+        root.appendChild(item);
+      }
+    }
+
+    async function showTask(id) {
+      if (openTaskId !== id) {
+        openTaskId = id;
+        const loading = $("task-detail");
+        loading.replaceChildren();
+        loading.className = "detail";
+        loading.appendChild(text("div", "Loading task...", "muted"));
+      }
+      try {
+        const data = await api("/api/tasks/" + encodeURIComponent(id));
+        if (openTaskId !== id) return;
+        renderTaskDetail(data.task || {});
+      } catch (err) {
+        if (openTaskId === id) {
+          $("task-detail").replaceChildren(text("div", err.message, "error"));
+        }
+      }
+    }
+
+    function renderTaskDetail(task) {
+      const root = $("task-detail");
+      root.replaceChildren();
+      root.className = "detail";
+      root.appendChild(text("div", task.goal || task.id, ""));
+      root.appendChild(
+        text(
+          "div",
+          "state " + (task.state || "-") + " | plan " + (task.plan_id || "-"),
+          "muted"
+        )
+      );
+      root.appendChild(
+        text(
+          "div",
+          "progress " + (task.completed_steps || 0) + "/" +
+            (task.total_steps || 0) + " | failed " + (task.failed_steps || 0),
+          "muted"
+        )
+      );
+      if (task.error) root.appendChild(text("div", task.error, "error"));
+      for (const result of task.step_results || []) {
+        const card = text("div", null, "step " + (result.success ? "ok" : "bad"));
+        card.appendChild(
+          text(
+            "div",
+            "#" + result.sequence + " " + (result.tool_id || "-") +
+              " | " + (result.success ? "ok" : "failed")
+          )
+        );
+        if (result.error) card.appendChild(text("div", result.error, "error"));
+        root.appendChild(card);
+      }
+      const actions = text("div", null, "actions");
+      if (task.plan_id) {
+        const view = text("button", "View plan", "");
+        view.addEventListener("click", () => showPlan(task.plan_id));
+        actions.appendChild(view);
+      }
+      if (["failed", "timed_out", "paused"].includes(task.state)) {
+        const resume = text("button", "Approve and resume", "primary");
+        resume.disabled = runActive;
+        resume.addEventListener("click", () => resumeTask(task.id));
+        actions.appendChild(resume);
+      }
+      if (["pending", "running", "paused"].includes(task.state)) {
+        const cancel = text("button", "Cancel task", "danger");
+        cancel.addEventListener("click", () => cancelTask(task.id));
+        actions.appendChild(cancel);
+      }
+      root.appendChild(actions);
+    }
+
+    async function resumeTask(id) {
+      if (runActive) return;
+      if (!confirm("Resume this task with explicit approval?")) return;
+      try {
+        await api(
+          "/api/tasks/" + encodeURIComponent(id) + "/resume",
+          {method: "POST", body: JSON.stringify({approved: true})}
+        );
+        await refresh();
+      } catch (err) {
+        $("run-error").textContent = err.message;
+      }
+    }
+
+    async function cancelTask(id) {
+      try {
+        await api(
+          "/api/tasks/" + encodeURIComponent(id) + "/cancel",
+          {method: "POST", body: "{}"}
+        );
+        await refresh();
+      } catch (err) {
+        $("run-error").textContent = err.message;
+      }
     }
 
     function renderApprovals(items) {
@@ -284,12 +588,12 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
-    function renderResult(result) {
+    function renderResult(result, kind) {
       const root = $("result");
       root.replaceChildren();
       if (!result) {
         root.className = "empty";
-        root.textContent = "No run yet.";
+        root.textContent = "No execution yet.";
         return;
       }
       root.className = "";
@@ -297,13 +601,29 @@ INDEX_HTML = """<!doctype html>
       state.appendChild(text("strong", "State"));
       state.appendChild(text("span", result.state || "-"));
       root.appendChild(state);
-      for (const key of ["task_id", "provider", "model", "tool_calls", "duration_ms"]) {
+      const keys = kind === "task"
+        ? ["task_id", "plan_id", "goal", "total_steps", "completed_steps",
+           "failed_steps", "duration_ms", "summary"]
+        : ["task_id", "provider", "model", "tool_calls", "duration_ms"];
+      for (const key of keys) {
         if (result[key] === undefined || result[key] === null) continue;
         const row = text("div", null, "component");
         row.appendChild(text("span", key, "muted"));
         const value = key === "duration_ms" ? Math.round(result[key]) + " ms" : result[key];
         row.appendChild(text("span", value));
         root.appendChild(row);
+      }
+      for (const step of result.step_results || []) {
+        const card = text("div", null, "step " + (step.success ? "ok" : "bad"));
+        card.appendChild(
+          text(
+            "div",
+            "#" + step.sequence + " " + (step.tool_id || "-") +
+              " | " + (step.success ? "ok" : "failed")
+          )
+        );
+        if (step.error) card.appendChild(text("div", step.error, "error"));
+        root.appendChild(card);
       }
       if (result.final_text) root.appendChild(text("pre", result.final_text, "mono"));
       if (result.error) root.appendChild(text("div", result.error, "error"));
@@ -331,10 +651,14 @@ INDEX_HTML = """<!doctype html>
         }
       }
       const run = state.run || {};
-      $("run").disabled = !!run.active;
-      $("cancel").disabled = !run.active;
+      runActive = !!run.active;
+      $("run").disabled = runActive;
+      $("cancel").disabled = !runActive;
       const current = (state.agent && state.agent.current) || {};
-      if (run.active) {
+      if (run.active && run.kind === "task") {
+        $("run-state").textContent = "running task | plan " +
+          (run.plan_id || "-") + " | task " + (run.task_id || "-");
+      } else if (run.active) {
         $("run-state").textContent = "running · " + (current.state || "starting") +
           " · steps " + (current.steps || 0) + " · tools " + (current.tool_calls || 0);
       } else if (run.result) {
@@ -344,9 +668,13 @@ INDEX_HTML = """<!doctype html>
       } else {
         $("run-state").textContent = "idle";
       }
+      renderPlans(state.plans || []);
+      renderTasks(state.tasks || []);
       renderApprovals(run.approvals || []);
-      renderResult(run.result);
+      renderResult(run.result, run.kind);
       if (run.error) $("run-error").textContent = run.error;
+      if (openPlanId) showPlan(openPlanId);
+      if (openTaskId) showTask(openTaskId);
     }
 
     async function refresh() {
@@ -393,7 +721,7 @@ INDEX_HTML = """<!doctype html>
 
     $("cancel").addEventListener("click", async () => {
       try {
-        await api("/api/agent/cancel", {method: "POST", body: "{}"});
+        await api("/api/run/cancel", {method: "POST", body: "{}"});
         await refresh();
       } catch (err) {
         $("run-error").textContent = err.message;

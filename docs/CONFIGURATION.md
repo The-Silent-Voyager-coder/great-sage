@@ -290,7 +290,8 @@ CLI: `greatsage workspace scan|info|health`, `greatsage planning
 create|get|list|verify|approve|health`, `greatsage task
 run|resume|list|get|cancel|health` (see `docs/INTERFACES.md` §12). `task run`
 requires a READY plan and `--approve` installs a task-scoped approval provider;
-`task resume` reopens failed/timed-out tasks and retries failed steps.
+`task resume` reopens failed/timed-out tasks and retries failed steps, with
+the same explicit `--approve` option when high-risk steps need re-approval.
 
 Note: the Phase 6 voice pipeline adds a `voice:` section (wake_word / stt
 / tts engine + model selections, see `config/sage.example.yaml`).

@@ -12,7 +12,7 @@ import pytest
 from greatsage.cli import EXIT_FAILURE, EXIT_INVALID, EXIT_OK, main
 
 
-def write_cli_config(tmp_path: Path) -> Path:
+def write_cli_config(tmp_path: Path, security_mode: str = "development") -> Path:
     d = str(tmp_path).replace("\\", "/")
     p = tmp_path / "sage.yaml"
     p.write_text(
@@ -45,7 +45,7 @@ tools:
   browser:
     default_risk: "READ"
 security:
-  mode: "development"
+  mode: "{security_mode}"
   default_mode: "ask"
   allow_auto_approve_read: true
   destructive_confirm: true
@@ -281,6 +281,52 @@ def test_task_resume_retries_failed_step(
     assert code == EXIT_OK
     assert "state    completed" in captured.out
     assert (ws / "resumed.txt").read_text(encoding="utf-8") == "resumed"
+
+
+def test_task_resume_approve_retries_medium_step(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cfg = write_cli_config(tmp_path, security_mode="normal")
+    ws = tmp_path / "workspace"
+    import yaml
+
+    plan_data = {
+        "id": "plan_resume_approve",
+        "goal": "write after approval",
+        "workspace_root": str(ws),
+        "steps": [
+            {
+                "sequence": 1,
+                "description": "write",
+                "tool_id": "filesystem.write",
+                "arguments": {"path": str(ws / "approved.txt"), "content": "yes"},
+                "risk_estimate": "medium",
+                "acceptance_criteria": "ok",
+            }
+        ],
+        "status": "ready",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "updated_at": "2026-01-01T00:00:00+00:00",
+        "metadata": {},
+    }
+    plan_path = tmp_path / "resume-approve.yaml"
+    plan_path.write_text(yaml.safe_dump(plan_data), encoding="utf-8")
+
+    code = main(["task", "run", str(plan_path), "--config", str(cfg)])
+    assert code == EXIT_FAILURE
+    capsys.readouterr()
+
+    code = main(["task", "list", "--config", str(cfg), "--json"])
+    assert code == EXIT_OK
+    task_id = json.loads(capsys.readouterr().out)[0]["id"]
+
+    code = main(
+        ["task", "resume", task_id, "--approve", "--config", str(cfg)]
+    )
+    captured = capsys.readouterr()
+    assert code == EXIT_OK
+    assert "state    completed" in captured.out
+    assert (ws / "approved.txt").read_text(encoding="utf-8") == "yes"
 
 
 def test_task_unknown_tool_denied(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

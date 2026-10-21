@@ -502,6 +502,7 @@ def _build_parser() -> argparse.ArgumentParser:
     task_resume.add_argument("task_id", metavar="TASK_ID", help="task id to resume")
     task_resume.add_argument("--config", metavar="PATH", default=None, help="configuration file to use")  # noqa: E501
     task_resume.add_argument("--json", action="store_true", help="machine-readable output")
+    task_resume.add_argument("--approve", action="store_true", help="record explicit human approval for this resume (never assumed)")  # noqa: E501
 
     task_list = task_sub.add_parser("list", help="list tasks")
     task_list.add_argument("--config", metavar="PATH", default=None, help="configuration file to use")  # noqa: E501
@@ -1754,7 +1755,7 @@ def _cmd_task_resume(args: argparse.Namespace) -> int:
         return EXIT_INVALID
     try:
         try:
-            report = runtime.task.resume(args.task_id)
+            report = runtime.task.resume(args.task_id, approved=args.approve)
         except TaskValidationError as exc:
             print(f"greatsage task resume: {exc}", file=sys.stderr)
             return EXIT_INVALID
