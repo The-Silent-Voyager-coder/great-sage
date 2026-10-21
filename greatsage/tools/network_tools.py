@@ -23,6 +23,7 @@ import urllib.request
 from html.parser import HTMLParser
 from typing import Any
 
+from greatsage.tools import network_security
 from greatsage.tools.models import BaseTool, ToolCategory, ToolContext, ToolResult, ToolRisk
 from greatsage.tools.redaction import redact_secrets
 
@@ -42,6 +43,13 @@ def _failure(request_id: str, tool_id: str, error: str) -> ToolResult:
     return ToolResult(request_id=request_id, tool_id=tool_id, success=False, error=error)
 
 
+def _open_url(
+    request: urllib.request.Request, *, timeout: float
+) -> Any:
+    """Open a validated request with redirect re-validation (test seam)."""
+    return network_security.open_public_url(request, timeout=timeout)
+
+
 def _validate_url(url: object, tool_id: str) -> tuple[str | None, str | None]:
     """Shared url validation: returns (normalized_url, error)."""
     if not isinstance(url, str) or not url.strip():
@@ -49,6 +57,7 @@ def _validate_url(url: object, tool_id: str) -> tuple[str | None, str | None]:
     normalized = url.strip()
     try:
         parsed = urllib.parse.urlsplit(normalized)
+        _ = parsed.port  # reject invalid ports during validation
     except ValueError as exc:
         return None, f"{tool_id} refuses malformed url: {exc}"
     if parsed.scheme not in ("http", "https"):
@@ -57,6 +66,10 @@ def _validate_url(url: object, tool_id: str) -> tuple[str | None, str | None]:
         return None, f"{tool_id} refuses url without a host"
     if parsed.username or parsed.password or "@" in parsed.netloc:
         return None, f"{tool_id} refuses urls with credentials"
+    try:
+        network_security.ensure_public_url(normalized)
+    except network_security.NetworkTargetError as exc:
+        return None, f"{tool_id} refuses {exc}"
     return normalized, None
 
 
@@ -103,10 +116,12 @@ class NetworkFetchTool(BaseTool):
             url, headers={"User-Agent": "GreatSage-local/1.0"}, method="GET"
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with _open_url(request, timeout=timeout) as response:
                 status = response.status
                 content_type = response.headers.get("Content-Type", "")
                 raw = response.read(max_bytes + 1)
+        except network_security.NetworkTargetError as exc:
+            return _failure("", self.id, f"network.fetch refused target: {exc}")
         except urllib.error.HTTPError as exc:
             return _failure(
                 "", self.id, f"network.fetch http error {exc.code} for {parsed.hostname}"
@@ -358,11 +373,13 @@ class NetworkWebfetchTool(BaseTool):
             url, headers={"User-Agent": "GreatSage-local/1.0"}, method="GET"
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with _open_url(request, timeout=timeout) as response:
                 status = response.status
                 content_type = response.headers.get("Content-Type", "")
                 final_url = response.geturl() if hasattr(response, "geturl") else url
                 raw = response.read(_WEBFETCH_MAX_DOWNLOAD_BYTES + 1)
+        except network_security.NetworkTargetError as exc:
+            return _failure("", self.id, f"network.webfetch refused target: {exc}")
         except urllib.error.HTTPError as exc:
             return _failure(
                 "", self.id, f"network.webfetch http error {exc.code} for {parsed.hostname}"
