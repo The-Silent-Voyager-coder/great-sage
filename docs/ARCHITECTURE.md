@@ -584,8 +584,8 @@ RuntimeStopped             ...
 ```
 
 Phase 2 added the intelligence event family (all published by the
-IntelligenceService, payloads are JSON-safe and never include prompts or
-secrets):
+IntelligenceService, payloads are JSON-safe and never include prompts,
+response text, or secrets; completion events carry `content_length` only):
 
 ```text
 AIRequestStarted         AIProviderSelected      AIStreamStarted

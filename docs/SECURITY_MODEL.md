@@ -179,6 +179,15 @@ Without changing the §2 risk vocabulary or the allow/ask/deny matrix:
 - **Containment checks resolve candidates.** `is_within` resolves both the
   candidate and the root before `relative_to`, so a lexical path such as
   `allowed/../outside` cannot appear to be inside the allowed root.
+- **Outbound targets are public-only.** `network.fetch` and
+  `network.webfetch` resolve the host and refuse loopback, private,
+  link-local, metadata, multicast, reserved, and other non-global addresses;
+  every redirect is revalidated before it is followed. (DNS rebinding
+  remains a residual OS-resolver risk; direct private targets do not pass.)
+- **AI events carry metadata, not model text.** `AIRequestCompleted` and
+  `AIStreamCompleted` publish provider/model, duration, finish reason, and
+  `content_length`; prompts and response text never enter the event bus or
+  audit log.
 - **Command policy.** OS installers and LOLBin/persistence binaries are
   `dangerous`; `powershell -EncodedCommand` is `forbidden`; `git config` is
   no longer treated as read-only.
@@ -203,6 +212,11 @@ Without changing the §2 risk vocabulary or the allow/ask/deny matrix:
   to audit events or long-term memory without an explicit user save decision,
   are bounded in retention, and pass through `redact_secrets` before any
   persisted summary.
+- **Telegram screenshots stay in the pipeline.** `/screenshot` executes
+  `gui.screenshot` through `ToolService` with source `telegram`. The
+  `listen --content` standing opt-in installs a provider scoped to that
+  source and tool only; the previous provider is restored immediately after
+  the single call. There is no direct tool invocation path from Telegram.
 - **Grounding actions are writes.** Any vision-grounded click/type/file
   operation is classified at least `LOW_WRITE`/`HIGH_WRITE` (a click on
   "Delete" is `HIGH_WRITE`) and goes through the standard
