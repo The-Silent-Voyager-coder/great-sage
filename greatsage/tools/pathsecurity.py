@@ -67,10 +67,15 @@ def canonicalize(path: str, base: Path) -> Path:
 
 
 def is_within(path: Path, root: Path) -> bool:
-    """Containment check; case-insensitive on Windows (pathlib semantics)."""
+    """Containment check; case-insensitive on Windows (pathlib semantics).
+
+    The candidate is resolved before comparison so a lexical path containing
+    ``..`` cannot appear to be inside a root it escapes from.
+    """
+    resolved_path = path.resolve()
     resolved_root = root.resolve()
     try:
-        path.relative_to(resolved_root)
+        resolved_path.relative_to(resolved_root)
         return True
     except ValueError:
         return False

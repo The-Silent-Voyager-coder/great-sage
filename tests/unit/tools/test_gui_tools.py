@@ -7,12 +7,18 @@ run. Screenshot capture runs live on Windows and skips cleanly elsewhere.
 
 from __future__ import annotations
 
+import ctypes
 import sys
 from pathlib import Path
 
 import pytest
 
-from greatsage.tools.gui_tools import GuiClickTool, GuiScreenshotTool, GuiTypeTool
+from greatsage.tools.gui_tools import (
+    GuiClickTool,
+    GuiScreenshotTool,
+    GuiTypeTool,
+    capture_primary_monitor_bmp,
+)
 from greatsage.tools.models import ToolCategory, ToolContext, ToolRisk
 
 WIN32 = sys.platform == "win32"
@@ -44,6 +50,12 @@ def test_platform_guard(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     assert "requires Windows" in click_err
     type_err = GuiTypeTool().execute({"text": "hi"}, _context(tmp_path)).error or ""
     assert "requires Windows" in type_err
+
+
+def test_capture_helper_requires_windll(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ctypes, "windll", None, raising=False)
+    with pytest.raises(OSError, match="windll"):
+        capture_primary_monitor_bmp()
 
 
 @pytest.mark.skipif(not WIN32, reason="Windows-only validation paths")

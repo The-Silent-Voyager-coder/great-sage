@@ -95,8 +95,10 @@ Rules:
 ### Hooks (they only tighten, never loosen)
 
 - **PathSecurityHook** (`greatsage/tools/pathsecurity.py`): canonicalizes every
-  declared path argument (absolute/relative/`~` expansion), denies paths
-  outside `allowed_roots` or inside `denied_roots`, and denies access to
+  declared path argument (absolute/relative/`~` expansion), resolves both
+  sides of the containment check before comparing them (so `..` cannot escape
+  a root lexically), denies paths outside `allowed_roots` or inside
+  `denied_roots`, and denies access to
   protected files on **every** declared path argument (including
   `shell.execute`'s `cwd`, Phase 9): `sage-memory.db` (+ `-wal`/`-journal`/`-shm`
   sidecars), `sage-audit.log`, `sage.yaml`, `.env`, `.env.*`, `.envrc`, and any

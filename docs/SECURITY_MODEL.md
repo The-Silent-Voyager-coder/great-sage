@@ -176,6 +176,9 @@ Without changing the §2 risk vocabulary or the allow/ask/deny matrix:
   templates (`.env.example`/`.sample`/`.template`) stay readable. The check
   applies to every declared path argument, closing the `shell.execute`
   `cwd` gap.
+- **Containment checks resolve candidates.** `is_within` resolves both the
+  candidate and the root before `relative_to`, so a lexical path such as
+  `allowed/../outside` cannot appear to be inside the allowed root.
 - **Command policy.** OS installers and LOLBin/persistence binaries are
   `dangerous`; `powershell -EncodedCommand` is `forbidden`; `git config` is
   no longer treated as read-only.

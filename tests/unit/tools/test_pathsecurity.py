@@ -46,6 +46,12 @@ def test_is_within_relative_root(tmp_path: Path) -> None:
     assert is_within(tmp_path / "base" / "x", root)
 
 
+def test_is_within_resolves_candidate_before_comparison(tmp_path: Path) -> None:
+    root = tmp_path / "base"
+    root.mkdir()
+    assert not is_within(root / ".." / "outside", root)
+
+
 @pytest.mark.parametrize(
     "name",
     [
