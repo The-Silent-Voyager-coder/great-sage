@@ -92,6 +92,7 @@ class IntelligenceService:
                     base_url=local.base_url,
                     model=local.model,
                     timeout_seconds=local.timeout_seconds,
+                    num_gpu=local.num_gpu,
                 )
             )
         opencode = ai.opencode

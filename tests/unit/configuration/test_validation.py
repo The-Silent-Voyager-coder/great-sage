@@ -130,6 +130,11 @@ def test_unknown_provider_field() -> None:
     assert any(p.field == "weird" for p in problems)
 
 
+def test_num_gpu_must_be_an_integer() -> None:
+    problems = validate({"ai": {"providers": {"local": {"num_gpu": "0"}}}})
+    assert any(p.dotted_path.endswith(".num_gpu") for p in problems)
+
+
 def test_provider_missing_field() -> None:
     problems = validate({"ai": {"providers": {"opencode": {"base_url": "http://x"}}}})
     assert any("providers.opencode.type" in p.dotted_path for p in problems)
@@ -163,6 +168,7 @@ def test_format_problems_identifies_field_value_expected() -> None:
 def test_coerce_env_types() -> None:
     assert coerce_env("bool", "true") is True
     assert coerce_env("bool", "0") is False
+    assert coerce_env("int", "-1") == -1
     assert coerce_env("positive_int", "12") == 12
     assert coerce_env("positive_number", "1.5") == 1.5
     assert coerce_env("nonempty_str", "x") == "x"
@@ -174,6 +180,12 @@ def test_coerce_env_types() -> None:
         coerce_env("positive_int", "abc")
     with pytest.raises(ValueError):
         coerce_env("int_list", "1,two")
+
+
+def test_apply_env_num_gpu_coercion() -> None:
+    raw = {"ai": {"providers": {"local": {"num_gpu": -1}}}}
+    apply_env(raw, {"GREATSAGE_AI__PROVIDERS__LOCAL__NUM_GPU": "0"})
+    assert raw["ai"]["providers"]["local"]["num_gpu"] == 0
 
 
 def test_apply_env_int_list_coercion() -> None:

@@ -37,6 +37,7 @@ DEFAULTS: dict[str, object] = {
                 "base_url": "http://127.0.0.1:11434",
                 "model": "",
                 "timeout_seconds": 120.0,
+                "num_gpu": -1,
             },
             "opencode": {
                 "type": "opencode",

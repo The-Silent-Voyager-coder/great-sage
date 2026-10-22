@@ -34,6 +34,9 @@ ai:
       base_url: "http://127.0.0.1:11434"   # Ollama
       model: ""
       timeout_seconds: 120
+      # GPU layers sent to Ollama: -1 = Ollama default, 0 = CPU-only.
+      # Use 0 for large models that hit local CUDA initialization errors.
+      num_gpu: -1
     opencode:
       type: "opencode"
       enabled: false
