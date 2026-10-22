@@ -293,3 +293,8 @@ The interactive dashboard is a control surface, not a second execution path:
   no arbitrary URL fetch, and no endpoint that grants a permission scope. A
   future remote surface would need explicit authentication and a separate
   security review.
+- **Background state is token-free.** `serve --background` writes only
+  pid/host/port/url/timestamps/log path to `core.runtime_dir`. `serve stop`
+  first verifies that the recorded loopback dashboard answers; a stale or
+  unresponsive PID is not killed. The page token remains in the served HTML
+  only.

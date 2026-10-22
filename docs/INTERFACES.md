@@ -741,12 +741,23 @@ still go through `ToolService.execute`, and approvals still use
 
 ```text
 greatsage serve [--host 127.0.0.1] [--port 8765] [--config PATH]
+greatsage serve --background [--host 127.0.0.1] [--port 8765] [--config PATH]
+greatsage serve status [--config PATH]
+greatsage serve stop [--config PATH]
 ```
 
 - Binds loopback only (`127.0.0.1`/`localhost`); non-loopback hosts are
-  refused. The HTML page carries a per-server token; every `/api/*` request
-  must send `X-GreatSage-Token`, and the `Host` header must match the bound
-  loopback endpoint (DNS-rebinding defense).
+  refused.
+- `--background` starts a detached child and returns after the dashboard
+  answers. A JSON state file (`greatsage-serve.json`) and console log
+  (`greatsage-serve.log`) live under `core.runtime_dir`; the page token is
+  never written to either file.
+- `serve status` reports `running`, `unresponsive`, `stale`, or `stopped`
+  (exit `0` only when running). `serve stop` verifies the dashboard answers
+  before terminating the recorded PID, then clears the state file.
+- The HTML page carries a per-server token; every `/api/*` request must send
+  `X-GreatSage-Token`, and the `Host` header must match the bound loopback
+  endpoint (DNS-rebinding defense).
 - `GET /` — offline dashboard (no external assets).
 - `GET /api/state` — HUD status, agent/planning/task health, current/last
   execution, pending approvals, and bounded plan/task summaries.

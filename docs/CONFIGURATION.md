@@ -353,5 +353,10 @@ CLI: `greatsage memory search QUERY --semantic`, `greatsage memory reindex`.
 surface over the existing subsystems. Bind/port are CLI flags only
 (`--host 127.0.0.1` / `--port 8765`), and non-loopback hosts are refused.
 The page token is generated per process; it is never written to config,
-logs, or events. See `docs/INTERFACES.md` §13 and `docs/SECURITY_MODEL.md`
-§13.
+logs, events, or the background state file.
+
+Background mode uses `core.runtime_dir` for two ephemeral files:
+`greatsage-serve.json` (pid/host/port/url/timestamps/log path) and
+`greatsage-serve.log` (child stdout/stderr). `greatsage serve status|stop`
+read the state file; stop only terminates after the loopback dashboard
+answers. See `docs/INTERFACES.md` §13 and `docs/SECURITY_MODEL.md` §13.
