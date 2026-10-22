@@ -59,6 +59,11 @@ ends `failed`; wall-clock exhaustion ends `timed_out`; limit exhaustion ends
 Tool calls carry structured arguments only (`id`, `tool_id`, `arguments`,
 `sequence`) — never an opaque shell string.
 
+The run's system note tells the model to answer directly when no tool is
+needed, avoid homeassistant/network/gui tools unless explicitly asked, and
+explain tool failures in plain language instead of printing raw error JSON.
+Adherence is model-dependent; the tool security pipeline remains authoritative.
+
 ## 4. Hard Limits (config + ceilings)
 
 | Limit | Default | Ceiling |

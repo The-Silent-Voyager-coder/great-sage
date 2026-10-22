@@ -48,6 +48,13 @@ if TYPE_CHECKING:
 log = logging.getLogger("greatsage.agent.service")
 
 _MEMORY_REFERENCE_LIMIT = 5
+_AGENT_SYSTEM_NOTE = (
+    "You are Great Sage. Answer directly when no tool is needed. Use only "
+    "tools required for the request. Never call homeassistant, network, or gui "
+    "tools unless the user explicitly asks for those systems. If a tool call "
+    "fails, explain the failure in plain language; never print raw JSON or "
+    "error objects as the final answer. Never claim actions you did not perform."
+)
 
 
 class AgentService:
@@ -147,10 +154,7 @@ class AgentService:
             prompt=prompt,
             conversation=(Message.user(prompt),),
             memory_references=self._retrieve_memory(prompt, session_id),
-            system_note=(
-                "You are Great Sage. You may call tools to gather facts, but you "
-                "must never claim actions you did not perform."
-            ),
+            system_note=_AGENT_SYSTEM_NOTE,
         )
         status = AgentRunStatus(task_id=task.task_id, session_id=session_id)
         token = CancellationToken()

@@ -218,6 +218,10 @@ def test_plain_run_completes(tmp_path: Path) -> None:
     assert result.steps
     assert service.health()["current"] == {}
     assert intelligence.requests
+    system_prompt = intelligence.requests[0].system_prompt or ""
+    assert "Answer directly when no tool is needed" in system_prompt
+    assert "never print raw JSON" in system_prompt
+    assert "explicitly asks" in system_prompt
     history = service.history()
     assert len(history) == 1
     assert history[0]["task_id"] == result.task_id
