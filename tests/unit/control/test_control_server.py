@@ -44,6 +44,24 @@ class _FakeAgent:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
         self.cancelled = False
+        self.history_runs: list[dict[str, Any]] = [
+            {
+                "task_id": "task_control_0",
+                "session_id": "s0",
+                "state": "completed",
+                "source": "control",
+                "steps": 2,
+                "tool_calls": 1,
+                "duration_ms": 12.0,
+                "provider": "fake",
+                "model": "fake-model",
+                "error": None,
+                "reason": None,
+                "content_length": 8,
+                "started_at": "2026-10-21T00:00:00+00:00",
+                "finished_at": "2026-10-21T00:00:01+00:00",
+            }
+        ]
 
     def health(self) -> dict[str, Any]:
         return {
@@ -52,7 +70,17 @@ class _FakeAgent:
             "enabled": True,
             "detail": "",
             "current": {},
+            "history": {"available": True, "runs": 1},
         }
+
+    def history(self, limit: int = 20) -> list[dict[str, Any]]:
+        return self.history_runs[:limit]
+
+    def history_get(self, task_id: str) -> dict[str, Any] | None:
+        return next(
+            (run for run in self.history_runs if run["task_id"] == task_id),
+            None,
+        )
 
     def run(
         self,
@@ -63,12 +91,14 @@ class _FakeAgent:
         model: str | None = None,
         max_steps: int | None = None,
         approval: Any = None,
+        source: str = "agent",
     ) -> _FakeResult:
         self.calls.append(
             {
                 "prompt": prompt,
                 "session_id": session_id,
                 "max_steps": max_steps,
+                "source": source,
             }
         )
         request = ToolRequest(
@@ -332,10 +362,13 @@ def test_control_page_and_token_gate(control_server: Any) -> None:
     assert b"test-token" in body
     assert b"Plans" in body
     assert b"Tasks" in body
+    assert b"Recent agent runs" in body
 
     status, _ = _request(server, "GET", "/api/state", token=None)
     assert status == 403
     status, _ = _request(server, "GET", "/api/plans", token=None)
+    assert status == 403
+    status, _ = _request(server, "GET", "/api/runs", token=None)
     assert status == 403
     status, _ = _request(
         server, "GET", "/", token=None, host="attacker.example"
@@ -349,8 +382,29 @@ def test_control_page_and_token_gate(control_server: Any) -> None:
     assert state["run"]["active"] is False
     assert {plan["id"] for plan in state["plans"]} == {"plan_ready", "plan_draft"}
     assert state["tasks"][0]["id"] == "task_1"
+    assert state["runs"][0]["task_id"] == "task_control_0"
     assert state["planning"]["available"] is True
     assert state["task"]["available"] is True
+
+
+def test_agent_run_history_views(control_server: Any) -> None:
+    server, _ = control_server
+    status, body = _request(server, "GET", "/api/runs")
+    assert status == 200
+    runs = json.loads(body)["runs"]
+    assert runs[0]["task_id"] == "task_control_0"
+    assert runs[0]["source"] == "control"
+    assert "final_text" not in runs[0]
+
+    status, body = _request(server, "GET", "/api/runs/task_control_0")
+    assert status == 200
+    run = json.loads(body)["run"]
+    assert run["state"] == "completed"
+    assert run["content_length"] == 8
+    assert "prompt" not in run
+
+    status, _ = _request(server, "GET", "/api/runs/missing")
+    assert status == 404
 
 
 def test_agent_run_pauses_then_approves(control_server: Any) -> None:

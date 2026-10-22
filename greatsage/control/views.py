@@ -169,3 +169,36 @@ def task_report(report: dict[str, Any]) -> dict[str, Any]:
         }
     )
     return view
+
+
+def agent_run_summary(run: dict[str, Any]) -> dict[str, Any]:
+    """Bounded metadata for one persisted agent run (no prompt/model text)."""
+    task_id = run.get("task_id")
+    return {
+        "task_id": str(task_id or ""),
+        "session_id": _optional_text(run.get("session_id"), 120),
+        "state": str(run.get("state", "")),
+        "source": str(run.get("source", "agent")),
+        "steps": run.get("steps", 0),
+        "tool_calls": run.get("tool_calls", 0),
+        "duration_ms": run.get("duration_ms", 0.0),
+        "provider": _optional_text(run.get("provider"), 120),
+        "model": _optional_text(run.get("model"), 200),
+        "error": _optional_text(run.get("error"), MAX_ERROR),
+        "reason": _optional_text(run.get("reason"), MAX_SUMMARY),
+        "content_length": run.get("content_length", 0),
+        "started_at": run.get("started_at"),
+        "finished_at": run.get("finished_at"),
+    }
+
+
+def agent_run_detail(run: dict[str, Any]) -> dict[str, Any]:
+    view = agent_run_summary(run)
+    view.update(
+        {
+            "tool_output_bytes": run.get("tool_output_bytes", 0),
+            "memory_references": run.get("memory_references", 0),
+            "prompt_length": run.get("prompt_length", 0),
+        }
+    )
+    return view

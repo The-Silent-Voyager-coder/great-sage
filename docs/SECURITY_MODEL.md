@@ -266,6 +266,12 @@ The agent loop never weakens the tool security pipeline:
 - **Secrets stay out of context.** Memory retrieval for the loop is bounded
   (`_MEMORY_REFERENCE_LIMIT = 5`) and degrades silently on failure; results
   are never auto-saved to long-term memory.
+- **History is metadata-only.** Persisted agent-run history
+  (`core.data_dir/sage-agent-runs.db`) stores state, counts, provider/model,
+  timings, redacted error/reason, prompt length, and output length. Prompts
+  and model output are never written; final text remains in the live
+  `AgentResult`/control state only. A corrupt or unavailable history database
+  disables history, never the run.
 
 ## 13. Local Control Plane (`greatsage serve`)
 

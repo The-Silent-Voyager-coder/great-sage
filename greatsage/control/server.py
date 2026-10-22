@@ -34,6 +34,7 @@ _APPROVAL_PATH = re.compile(r"^/api/approvals/([A-Za-z0-9_-]+)/(approve|reject)$
 _PLAN_PATH = re.compile(r"^/api/plans/([A-Za-z0-9_-]+)$")
 _PLAN_APPROVE_PATH = re.compile(r"^/api/plans/([A-Za-z0-9_-]+)/approve$")
 _PLAN_RUN_PATH = re.compile(r"^/api/plans/([A-Za-z0-9_-]+)/run$")
+_RUN_PATH = re.compile(r"^/api/runs/([A-Za-z0-9_-]+)$")
 _TASK_PATH = re.compile(r"^/api/tasks/([A-Za-z0-9_-]+)$")
 _TASK_CANCEL_PATH = re.compile(r"^/api/tasks/([A-Za-z0-9_-]+)/cancel$")
 _TASK_RESUME_PATH = re.compile(r"^/api/tasks/([A-Za-z0-9_-]+)/resume$")
@@ -134,10 +135,16 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             self._send_json(200, payload)
             return
-        if path in ("/api/plans", "/api/tasks"):
+        if path in ("/api/plans", "/api/tasks", "/api/runs"):
             if not self._authorized():
                 return
             self._handle_list(path)
+            return
+        match = _RUN_PATH.match(path)
+        if match:
+            if not self._authorized():
+                return
+            self._handle_run_detail(unquote(match.group(1)))
             return
         match = _PLAN_PATH.match(path)
         if match:
@@ -234,10 +241,20 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/plans":
                 self._send_json(200, {"plans": self._state.list_plans()})
+            elif path == "/api/runs":
+                self._send_json(200, {"runs": self._state.list_agent_runs()})
             else:
                 self._send_json(200, {"tasks": self._state.list_tasks()})
         except Exception as exc:
             self._send_state_error(exc)
+
+    def _handle_run_detail(self, task_id: str) -> None:
+        try:
+            run = self._state.get_agent_run(task_id)
+        except Exception as exc:
+            self._send_state_error(exc)
+            return
+        self._send_json(200, {"run": run})
 
     def _handle_plan_detail(self, plan_id: str) -> None:
         try:

@@ -609,9 +609,12 @@ class AgentService:         # greatsage/agent/service.py
     def start(self, config: SageConfig) -> None: ...
     def run(self, prompt: str, *, session_id: str | None = None,
             provider: str | None = None, model: str | None = None,
-            max_steps: int | None = None) -> AgentResult: ...
+            max_steps: int | None = None, source: str = "agent") -> AgentResult: ...
     def cancel(self, task_id: str) -> None: ...
-    def health(self) -> dict: ...   # available/status/enabled/detail/current
+    def history(self, limit: int = 20) -> list[dict]: ...
+    def history_get(self, task_id: str) -> dict | None: ...
+    def history_health(self) -> dict: ...
+    def health(self) -> dict: ...   # available/status/enabled/detail/current/history
     def register_health_check(self, health_registry) -> None: ...
 
 class AgentApprovalProvider:   # greatsage/agent/approval.py
@@ -646,10 +649,19 @@ greatsage agent health [--config PATH] [--json]
 greatsage agent run --prompt TEXT [--session-id SID] [--provider NAME]
                   [--model NAME] [--max-steps N] [--interactive]
                   [--json] [--config PATH]
+greatsage agent history [--limit N] [--config PATH] [--json]
 ```
 
-Exit codes: `0` completed run / healthy; `1` failure (unavailable provider,
-runtime failure, non-completed state); `2` invalid prompt/configuration.
+Exit codes: `0` completed run / healthy / history available; `1` failure
+(unavailable provider, runtime failure, non-completed state, history
+unavailable); `2` invalid prompt/configuration.
+
+`AgentService` records every terminal result in
+`core.data_dir/sage-agent-runs.db` (metadata only: state, step/tool counts,
+provider/model, timings, redacted error/reason, prompt length, output length).
+Prompts and model output are never persisted. `agent history` and the control
+plane's recent-runs view read this store newest-first; `--json` emits the
+stored metadata.
 
 ## 12. Workspace / Planning / Task Interfaces (Phase 6)
 
@@ -760,7 +772,11 @@ greatsage serve stop [--config PATH]
   endpoint (DNS-rebinding defense).
 - `GET /` — offline dashboard (no external assets).
 - `GET /api/state` — HUD status, agent/planning/task health, current/last
-  execution, pending approvals, and bounded plan/task summaries.
+  execution, pending approvals, bounded recent agent runs, and bounded
+  plan/task summaries.
+- `GET /api/runs` / `GET /api/runs/<task_id>` — read-only persisted agent-run
+  metadata (state, counts, provider/model, timings, redacted error/reason,
+  lengths). Prompts and model text are never returned.
 - `GET /api/plans` / `GET /api/plans/<plan_id>` — read-only plan summaries and
   detail (status, linked `task_id`, steps, tool ids, risk estimates,
   redacted/bounded argument previews).

@@ -10,6 +10,7 @@ import pytest
 
 from greatsage.agent.approval import AgentApprovalProvider
 from greatsage.agent.approval_broker import ApprovalBroker
+from greatsage.agent.history import AgentHistoryError
 from greatsage.agent.models import AgentState
 from greatsage.agent.service import AgentService
 from greatsage.configuration.loader import load_config
@@ -217,6 +218,42 @@ def test_plain_run_completes(tmp_path: Path) -> None:
     assert result.steps
     assert service.health()["current"] == {}
     assert intelligence.requests
+    history = service.history()
+    assert len(history) == 1
+    assert history[0]["task_id"] == result.task_id
+    assert history[0]["state"] == "completed"
+    assert "prompt" not in history[0]
+    assert "final_text" not in history[0]
+    service.shutdown()
+    restarted = AgentService()
+    restarted.start(_config(tmp_path))
+    assert restarted.history()[0]["task_id"] == result.task_id
+    restarted.shutdown()
+
+
+def test_history_failure_disables_history_but_not_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(self) -> None:  # noqa: ANN001
+        raise AgentHistoryError("history database is locked")
+
+    monkeypatch.setattr(
+        "greatsage.agent.service.AgentRunStore.initialize", fail
+    )
+    intelligence = FakeIntelligenceService(
+        FakeProviderRegistry({"local": FakeProvider("local")}),
+        [text_handler("still works")],
+        keep_last=False,
+    )
+    service = AgentService(intelligence=intelligence, tools=FakeTools())
+    service.start(_config(tmp_path))
+
+    result = service.run("run anyway")
+
+    assert result.state is AgentState.COMPLETED
+    assert result.final_text == "still works"
+    assert service.history() == []
+    assert service.history_health()["available"] is False
 
 
 def test_max_steps_override_is_applied(tmp_path: Path) -> None:
@@ -366,6 +403,13 @@ def test_health_lifecycle(tmp_path: Path) -> None:
         "detail": "agent service not started",
         "enabled": False,
         "current": {},
+        "history": {
+            "available": False,
+            "schema_version": 0,
+            "database_path": "",
+            "runs": 0,
+            "detail": "agent history not initialized",
+        },
     }
     service.start(_config(tmp_path))
     healthy = service.health()
@@ -374,6 +418,7 @@ def test_health_lifecycle(tmp_path: Path) -> None:
     assert "steps<=" in healthy["detail"]
     assert healthy["enabled"] is True
     assert healthy["current"] == {}
+    assert healthy["history"]["available"] is True
     service.shutdown()
     stopped = service.health()
     assert stopped["status"] == "disabled"
