@@ -697,6 +697,11 @@ from logs + task history.
 - Redaction: values under secret-shaped keys (`apiKey`, `password`, `token`,
   `secret`, `authorization`, …) and URL userinfo are masked (`***`) in JSON
   output as defense in depth — logging code must still never log credentials.
+- Read-only audit inspection: `greatsage audit tail [--lines N]` and
+  `greatsage audit search QUERY [--limit N]` read the configured
+  `security.audit_log` without creating, truncating, rotating, or rewriting
+  it. `--json` returns parsed entries; invalid lines surface as redacted
+  `raw` records.
 
 ## 9. Verification (Definition of "done")
 
