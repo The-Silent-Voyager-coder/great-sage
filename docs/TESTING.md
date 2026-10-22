@@ -275,7 +275,7 @@ Coverage:
 
 ## 6g. Trust/control baseline (October 2026)
 
-- **1,279 tests collected**; full suite green, `ruff` + `mypy` clean
+- **1,282 tests collected**; full suite green, `ruff` + `mypy` clean
   (145 source files).
 - New suites: `tests/unit/agent/test_agent_approval_broker.py` (pending-only
   decisions, redacted previews, timeout cleanup), `tests/unit/observability/

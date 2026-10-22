@@ -6,8 +6,11 @@ import json
 import logging
 from pathlib import Path
 
+import pytest
+
 from greatsage.configuration.model import LoggingConfig
 from greatsage.observability.logging import (
+    ConsoleFormatter,
     JsonFormatter,
     correlation,
     current_correlation,
@@ -158,3 +161,38 @@ def test_console_handler_added_and_level_applied(tmp_path: Path) -> None:
     logger = logging.getLogger("greatsage.consolecheck")
     assert logger.isEnabledFor(logging.WARNING)
     assert not logger.isEnabledFor(logging.INFO)
+
+
+def test_console_formatter_is_human_readable() -> None:
+    line = ConsoleFormatter().format(_make_record("hello console"))
+    assert line.startswith("20")
+    assert "INFO" in line
+    assert "hello console" in line
+    assert not line.startswith("{")
+
+
+def test_console_suppresses_routine_info_by_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    setup_logging(LoggingConfig(level="INFO", format="json", retention_days=1), tmp_path)
+    logger = logging.getLogger("greatsage.consolecheck")
+    logger.info("hidden startup detail")
+    logger.warning("visible warning")
+    flush_logging()
+    err = capsys.readouterr().err
+    assert "hidden startup detail" not in err
+    assert "visible warning" in err
+    assert '"timestamp"' not in err
+
+
+def test_console_can_show_info_when_requested(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    setup_logging(
+        LoggingConfig(level="INFO", format="json", retention_days=1),
+        tmp_path,
+        console_level=logging.INFO,
+    )
+    logging.getLogger("greatsage.consolecheck").info("visible info")
+    flush_logging()
+    assert "visible info" in capsys.readouterr().err
