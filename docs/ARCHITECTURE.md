@@ -502,9 +502,11 @@ terminal state (on timeout/denial-resolve).
    `max_total_tool_output`/`loop_detection`).
 
 Cancellation is cooperative: `CancellationToken.cancel()` flips the token;
-the orchestrator checks it between steps and before every tool call; a
-cancelled per-call approval gate resolves the pending tool call as
-cancelled and ends the run `CANCELLED`.
+the orchestrator checks it between steps, after every provider generation,
+and before every tool call; a cancelled per-call approval gate resolves the
+pending tool call as cancelled and ends the run `CANCELLED`. Ollama calls
+have no server-side cancel handle, so an in-flight generation observes the
+cancel when it returns.
 
 ### Limit hierarchy
 

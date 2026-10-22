@@ -103,8 +103,10 @@ Tool calls carry structured arguments only (`id`, `tool_id`, `arguments`,
 ## 6. Cancellation and Timeouts
 
 - Cooperative `CancellationToken`: `cancel(task_id)` flips it; the
-  orchestrator checks it between steps and before every tool call; a
-  pending approval gate resolves to cancelled.
+  orchestrator checks it between steps, after each provider generation, and
+  before every tool call; a pending approval gate resolves to cancelled.
+  Ollama requests have no server-side cancel handle, so an in-flight
+  generation ends the run `cancelled` once the provider returns.
 - Wall-clock timeout (`max_wall_time_seconds`) ends `timed_out`.
 - Per-tool execution timeouts are enforced by the tool layer itself
   (`tools.execution_timeout_seconds`).
@@ -137,8 +139,9 @@ Tool calls carry structured arguments only (`id`, `tool_id`, `arguments`,
 ## 9. Events
 
 `AGENT_*` events carry ids/reasons only — prompts, tool-argument values,
-and secrets are never published. Phase 4 `TOOL_*` events keep flowing for
-every real execution. Exact order for one tool call:
+model output, and secrets are never published. `AGENT_COMPLETED` carries
+`content_length`; the final text stays in the `AgentResult`/control state.
+Phase 4 `TOOL_*` events keep flowing for every real execution. Exact order for one tool call:
 
 ```text
 AGENT_STARTED → AGENT_STEP_STARTED → AGENT_TOOL_CALL_REQUESTED →

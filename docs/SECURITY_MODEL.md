@@ -251,11 +251,14 @@ The agent loop never weakens the tool security pipeline:
   enforced with hard ceilings; runaway or repetitive behavior ends the run
   `LIMIT_REACHED`/`TIMED_OUT`.
 - **Cancellable at every point.** Cooperative cancellation is checked
-  between steps and before every tool call; a pending approval gate resolves
-  to cancelled. A cancelled run never leaves an orphaned tool process.
-- **Auditable.** `AGENT_*` events carry ids/reasons only — prompts and
-  tool-argument values are never published; Phase 4 `TOOL_*` audit events
-  keep flowing for every real execution.
+  between steps, after every provider generation, and before every tool call;
+  a pending approval gate resolves to cancelled. An in-flight Ollama request
+  cannot be interrupted server-side, so it ends `CANCELLED` when it returns.
+  A cancelled run never leaves an orphaned tool process.
+- **Auditable.** `AGENT_*` events carry ids/reasons only — prompts,
+  tool-argument values, and model output are never published.
+  `AGENT_COMPLETED` carries `content_length`, never final text; Phase 4
+  `TOOL_*` audit events keep flowing for every real execution.
 - **Secrets stay out of context.** Memory retrieval for the loop is bounded
   (`_MEMORY_REFERENCE_LIMIT = 5`) and degrades silently on failure; results
   are never auto-saved to long-term memory.

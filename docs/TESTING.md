@@ -267,7 +267,7 @@ Coverage:
 
 ## 6g. Trust/control baseline (October 2026)
 
-- **1,219 tests collected**; full suite green, `ruff` + `mypy` clean
+- **1,221 tests collected**; full suite green, `ruff` + `mypy` clean
   (142 source files).
 - New suites: `tests/unit/agent/test_agent_approval_broker.py` (pending-only
   decisions, redacted previews, timeout cleanup), `tests/unit/observability/
@@ -283,7 +283,10 @@ Coverage:
   on resume; provider health recovers to READY after a successful probe;
   Telegram screenshots use ToolService (not a direct tool call); network
   tools reject loopback/private/metadata targets and private redirects;
-  `AIRequestCompleted`/`AIStreamCompleted` carry metadata, never text.
+  `AIRequestCompleted`/`AIStreamCompleted` carry metadata, never text;
+  cancellation during the final model generation ends `cancelled` (not
+  `completed`), and `AGENT_COMPLETED` carries `content_length` instead of
+  model text.
 - The control-plane suite runs a real loopback HTTP server in a thread with a
   fake runtime; no external network, no model calls, no real tool execution.
   Request bodies are drained before auth responses to avoid Windows RST

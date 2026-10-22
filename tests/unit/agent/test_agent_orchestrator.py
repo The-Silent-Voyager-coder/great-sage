@@ -344,6 +344,25 @@ def test_cancelled_during_tool_loop() -> None:
     assert status.reason == "cancelled"
 
 
+def test_cancelled_during_final_generation() -> None:
+    token = CancellationToken()
+    intelligence = FakeIntelligence([text_handler("final answer")], keep_last=False)
+    tools = FakeTools()
+
+    def cancel_next(request):  # noqa: ANN001
+        response = text_handler("final answer")(request)
+        token.cancel()
+        return response
+
+    intelligence._queue = type(intelligence._queue)([cancel_next])
+    result, status, _ = _run(intelligence, tools, token=token)
+    assert result.state is AgentState.CANCELLED
+    assert result.reason == "cancelled"
+    assert result.final_text is None
+    assert status.state is AgentState.CANCELLED
+    assert tools.calls == []
+
+
 def test_wall_clock_timeout(monkeypatch) -> None:
     # Scripted clock so expiry is deterministic on any machine speed: the
     # run starts at t0 and every later read is past the budget, so the
@@ -366,6 +385,30 @@ def test_wall_clock_timeout(monkeypatch) -> None:
     assert result.state is AgentState.TIMED_OUT
     assert result.reason == "wall_clock"
     assert status.state is AgentState.TIMED_OUT
+
+
+def test_wall_clock_checked_after_generation(monkeypatch) -> None:
+    # A slow provider call must not slip past the wall-clock budget just
+    # because the loop's pre-step check already passed.
+    clock = {"now": 0.0}
+
+    def slow_handler(request):  # noqa: ANN001
+        response = text_handler("done")(request)
+        clock["now"] = 100.0
+        return response
+
+    monkeypatch.setattr(
+        "greatsage.agent.orchestrator.time.monotonic", lambda: clock["now"]
+    )
+    intelligence = FakeIntelligence([slow_handler], keep_last=False)
+    tools = FakeTools()
+    result, status, _ = _run(
+        intelligence, tools, limits=AgentLimits(max_wall_time_seconds=1.0)
+    )
+    assert result.state is AgentState.TIMED_OUT
+    assert result.reason == "wall_clock"
+    assert status.state is AgentState.TIMED_OUT
+    assert tools.calls == []
 
 
 def test_max_steps_limit() -> None:
@@ -447,17 +490,19 @@ def test_events_ordered_and_serializable() -> None:
 
 
 def test_terminal_event_payload_shape() -> None:
-    recorded: list[str] = []
+    recorded: list[tuple[str, dict]] = []
 
     def publisher(event):  # noqa: ANN001
-        recorded.append(event.type)
+        recorded.append((event.type, event.payload))
         json.dumps(event.payload, default=str)
 
     intelligence = FakeIntelligence([text_handler("bye")], keep_last=False)
     tools = FakeTools()
     result, status, _ = _run(intelligence, tools, publisher=publisher)
     assert result.state is AgentState.COMPLETED
-    assert recorded[-1] == AGENT_COMPLETED
+    assert recorded[-1][0] == AGENT_COMPLETED
+    assert recorded[-1][1]["content_length"] == 3
+    assert "final_text" not in recorded[-1][1]
     assert status.reason is None
 
 
