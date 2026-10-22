@@ -1515,7 +1515,7 @@ def _cmd_agent_run(args: argparse.Namespace) -> int:
     print("Great Sage Agent Run")
     print(f"  task_id      {result.task_id}")
     print(f"  state        {result.state.value}")
-    print(f"  steps        {result.steps}")
+    print(f"  steps        {len(result.steps)}")
     print(f"  tool_calls   {result.tool_calls}")
     print(f"  failed_tools {result.failed_tool_calls}")
     print(f"  duration_ms  {result.duration_ms:.0f}")

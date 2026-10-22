@@ -61,7 +61,118 @@ def _pick_default_model(models: tuple[str, ...]) -> str | None:
     return models[0] if models else None
 
 
-def _parse_tool_calls(raw: Any) -> list[ToolCall] | None:
+_SCHEMA_KEYWORDS = frozenset(
+    {
+        "type",
+        "properties",
+        "required",
+        "additionalProperties",
+        "description",
+        "title",
+        "default",
+        "enum",
+        "items",
+        "oneOf",
+        "anyOf",
+        "allOf",
+    }
+)
+
+
+def _schema_accepts(arguments: dict[str, Any], schema: dict[str, Any] | None) -> bool:
+    """Cheap check that arguments look like an instance, not the schema itself."""
+    if not isinstance(schema, dict):
+        return bool(arguments)
+    properties = schema.get("properties")
+    required = schema.get("required")
+    if isinstance(required, list):
+        names = [name for name in required if isinstance(name, str)]
+        if names:
+            return all(name in arguments for name in names)
+    if isinstance(properties, dict):
+        return any(name in arguments for name in properties)
+    return bool(arguments)
+
+
+def _coerce_boolean_strings(
+    arguments: dict[str, Any], schema: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Repair the common `\"true\"`/`\"false\"` model output for boolean fields.
+
+    Only values whose schema explicitly declares `type: boolean` are touched;
+    every other string stays untouched. Argument validation still runs.
+    """
+    if not isinstance(schema, dict):
+        return arguments
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return arguments
+    result = dict(arguments)
+    for name, spec in properties.items():
+        if name not in result or not isinstance(spec, dict):
+            continue
+        if spec.get("type") != "boolean" or not isinstance(result[name], str):
+            continue
+        value = result[name].strip().lower()
+        if value == "true":
+            result[name] = True
+        elif value == "false":
+            result[name] = False
+    return result
+
+
+def _normalise_tool_arguments(
+    arguments: Any, schema: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Turn common model argument malformations into a flat instance object.
+
+    Small local models sometimes emit the tool schema itself, or wrap the real
+    arguments in `parameters`/`properties`/`arguments`. This only reshapes the
+    payload; the tool layer still validates it and applies the full security
+    policy, so normalization never grants an action.
+    """
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except ValueError:
+            return {}
+    if not isinstance(arguments, dict):
+        return {}
+
+    # Explicit function-call wrapper: {type, function, parameters: {...}}.
+    parameters = arguments.get("parameters")
+    if (
+        isinstance(parameters, dict)
+        and "function" in arguments
+        and isinstance(arguments.get("function"), str)
+    ):
+        arguments = parameters
+
+    # Schema-shaped payload: {type: "object", properties: {...}, required: [...]}.
+    if not _schema_accepts(arguments, schema):
+        properties = schema.get("properties") if isinstance(schema, dict) else None
+        for key in ("parameters", "properties", "arguments"):
+            candidate = arguments.get(key)
+            if not isinstance(candidate, dict) or not _schema_accepts(candidate, schema):
+                continue
+            merged = dict(candidate)
+            if isinstance(properties, dict):
+                for name, value in arguments.items():
+                    if (
+                        name in properties
+                        and name not in merged
+                        and name not in _SCHEMA_KEYWORDS
+                    ):
+                        merged[name] = value
+            arguments = merged
+            break
+
+    return _coerce_boolean_strings(arguments, schema)
+
+
+def _parse_tool_calls(
+    raw: Any, schemas: dict[str, dict[str, Any]] | None = None
+) -> list[ToolCall] | None:
     """Parse Ollama `message.tool_calls` (arguments may arrive as JSON text)."""
     if not isinstance(raw, list) or not raw:
         return None
@@ -71,18 +182,13 @@ def _parse_tool_calls(raw: Any) -> list[ToolCall] | None:
             continue
         raw_function = call.get("function")
         function: dict[str, Any] = raw_function if isinstance(raw_function, dict) else {}
-        arguments: Any = function.get("arguments")
-        if isinstance(arguments, str):
-            try:
-                arguments = json.loads(arguments)
-            except ValueError:
-                arguments = {}
-        if not isinstance(arguments, dict):
-            arguments = {}
+        name = str(function.get("name") or call.get("name") or "unknown")
+        schema = (schemas or {}).get(name)
+        arguments = _normalise_tool_arguments(function.get("arguments"), schema)
         calls.append(
             ToolCall(
                 id=str(call.get("id") or f"call_{index + 1}"),
-                name=str(function.get("name") or call.get("name") or "unknown"),
+                name=name,
                 arguments=arguments,
             )
         )
@@ -240,7 +346,10 @@ class OllamaProvider(AIProvider):
             )
         raw_message = data.get("message")
         message: dict[str, Any] = raw_message if isinstance(raw_message, dict) else {}
-        tool_calls = _parse_tool_calls(message.get("tool_calls") or data.get("tool_calls"))
+        schemas = {tool.name: tool.input_schema for tool in (request.tools or [])}
+        tool_calls = _parse_tool_calls(
+            message.get("tool_calls") or data.get("tool_calls"), schemas
+        )
         content = str(message.get("content") or "")
         finish_reason = _map_finish_reason(data.get("done_reason"))
         if tool_calls:
@@ -269,6 +378,7 @@ class OllamaProvider(AIProvider):
         self._require_ready()
         if request.tools:
             self._require_capability(Capability.TOOL_CALLING)
+        schemas = {tool.name: tool.input_schema for tool in (request.tools or [])}
         try:
             response = transport.request_text(
                 _join_url(self._base_url, "/api/chat"),
@@ -298,14 +408,14 @@ class OllamaProvider(AIProvider):
             content = data.get("message", {}).get("content")
             if content:
                 yield StreamChunk.text_delta(str(content))
-            raw_calls = data.get("tool_calls") or []
-            for call in raw_calls:
-                if not isinstance(call, dict):
-                    continue
+            raw_message = data.get("message")
+            message = raw_message if isinstance(raw_message, dict) else {}
+            raw_calls = data.get("tool_calls") or message.get("tool_calls") or []
+            for call in _parse_tool_calls(raw_calls, schemas) or []:
                 yield StreamChunk.tool_call_delta(
-                    tool_call_id=str(call.get("id")),
-                    name=str(call.get("function", {}).get("name")),
-                    arguments=json.dumps(call.get("function", {}).get("arguments", {})),
+                    tool_call_id=call.id,
+                    name=call.name,
+                    arguments=json.dumps(call.arguments),
                 )
             if data.get("done"):
                 prompt_tokens = data.get("prompt_eval_count")

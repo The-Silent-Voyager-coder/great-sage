@@ -74,8 +74,10 @@ Target: ≥80% coverage on `greatsage/` modules; 100% on the
   explicit selection never falls back, capability/availability/model filters,
   coding→CODE_EXECUTION preference, local-only preference), Ollama + OpenCode
   adapters against an in-process fake HTTP server (`conftest.py` →
-  `ThreadingHTTPServer` with scripted routes), benchmark, and the
-  IntelligenceService facade (events, failure isolation, health registration).
+  `ThreadingHTTPServer` with scripted routes), Ollama tool-argument
+  normalization (schema-shaped payloads, `parameters` wrappers, and
+  schema-declared boolean strings), benchmark, and the IntelligenceService
+  facade (events, failure isolation, health registration).
   CLI integration tests added: `ai health|providers|benchmark` incl. `--json`
   and exit codes (0 healthy, 1 any-unhealthy, 2 config error).
 - **No real services in tests**: fake servers only; no internet, no API keys,
@@ -273,7 +275,7 @@ Coverage:
 
 ## 6g. Trust/control baseline (October 2026)
 
-- **1,271 tests collected**; full suite green, `ruff` + `mypy` clean
+- **1,276 tests collected**; full suite green, `ruff` + `mypy` clean
   (145 source files).
 - New suites: `tests/unit/agent/test_agent_approval_broker.py` (pending-only
   decisions, redacted previews, timeout cleanup), `tests/unit/observability/

@@ -165,6 +165,7 @@ def test_agent_run_safe_loop(
     out = capsys.readouterr().out
     assert "Great Sage Agent Run" in out
     assert "state        completed" in out
+    assert "steps        2" in out
     assert "tool_calls   1" in out
     assert "failed_tools 0" in out
     assert "System checked via agent loop." in out
