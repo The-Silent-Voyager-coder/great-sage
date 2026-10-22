@@ -187,6 +187,7 @@ def test_multiple_tool_calls_in_one_response_execute_in_order() -> None:
     result, status, _ = _run(intelligence, tools, limits=AgentLimits(max_single_tool_calls=2))
     assert result.state is AgentState.COMPLETED
     assert result.tool_calls == 2
+    assert result.failed_tool_calls == 0
     assert [call.tool_id for call in tools.calls] == ["filesystem.list"] * 2
     assert len(result.steps) == 2
     assert status.steps == 2
@@ -201,6 +202,7 @@ def test_tool_failure_is_returned_to_ai_once() -> None:
     result, _, recorder = _run(intelligence, tools)
     assert result.state is AgentState.COMPLETED
     assert result.tool_calls == 1
+    assert result.failed_tool_calls == 1
     assert "error: boom" in recorder.last_message_text(-1)
 
 
@@ -213,6 +215,7 @@ def test_unknown_tool_failure_fed_to_ai() -> None:
     result, _, recorder = _run(intelligence, tools)
     assert result.state is AgentState.COMPLETED
     assert result.tool_calls == 1
+    assert result.failed_tool_calls == 1
     assert "unknown tool" in recorder.last_message_text(-1)
 
 
@@ -225,6 +228,7 @@ def test_invalid_arguments_failure_fed_to_ai() -> None:
     result, _, recorder = _run(intelligence, tools)
     assert result.state is AgentState.COMPLETED
     assert result.tool_calls == 1
+    assert result.failed_tool_calls == 1
     assert "invalid arguments" in recorder.last_message_text(-1)
 
 
@@ -237,6 +241,7 @@ def test_security_denial_fed_to_ai() -> None:
     result, _, recorder = _run(intelligence, tools)
     assert result.state is AgentState.COMPLETED
     assert result.tool_calls == 1
+    assert result.failed_tool_calls == 1
     assert "denied" in recorder.last_message_text(-1)
 
 

@@ -1517,6 +1517,7 @@ def _cmd_agent_run(args: argparse.Namespace) -> int:
     print(f"  state        {result.state.value}")
     print(f"  steps        {result.steps}")
     print(f"  tool_calls   {result.tool_calls}")
+    print(f"  failed_tools {result.failed_tool_calls}")
     print(f"  duration_ms  {result.duration_ms:.0f}")
     print(f"  provider     {result.provider or '-'}")
     print(f"  model        {result.model or '-'}")
@@ -1560,6 +1561,7 @@ def _cmd_agent_history(args: argparse.Namespace) -> int:
             print(
                 f"    steps={entry.get('steps', 0)} "
                 f"tools={entry.get('tool_calls', 0)} "
+                f"failed_tools={entry.get('failed_tool_calls', 0)} "
                 f"duration_ms={float(entry.get('duration_ms') or 0):.0f} "
                 f"provider={entry.get('provider') or '-'} "
                 f"model={entry.get('model') or '-'}"

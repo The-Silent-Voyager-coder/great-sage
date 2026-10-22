@@ -25,7 +25,7 @@ from greatsage.tools.redaction import redact_secrets
 
 log = logging.getLogger("greatsage.agent.history")
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_RUNS = 500
 MAX_TEXT = 4000
 
@@ -60,6 +60,10 @@ MIGRATIONS: dict[int, list[str]] = {
         """,
         "CREATE INDEX IF NOT EXISTS idx_agent_runs_finished "
         "ON agent_runs(finished_at DESC)",
+    ],
+    1: [
+        "ALTER TABLE agent_runs ADD COLUMN failed_tool_calls "
+        "INTEGER NOT NULL DEFAULT 0",
     ],
 }
 
@@ -105,6 +109,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "source": str(row["source"]),
         "steps": int(row["steps"]),
         "tool_calls": int(row["tool_calls"]),
+        "failed_tool_calls": int(row["failed_tool_calls"]),
         "tool_output_bytes": int(row["tool_output_bytes"]),
         "duration_ms": float(row["duration_ms"]),
         "provider": str(row["provider"]) if row["provider"] else None,
@@ -212,6 +217,7 @@ class AgentRunStore:
             _text(source, 40) or "agent",
             len(result.steps),
             int(result.tool_calls),
+            int(result.failed_tool_calls),
             int(result.tool_output_bytes),
             float(result.duration_ms),
             _text(result.provider, 200),
@@ -232,10 +238,10 @@ class AgentRunStore:
                         """
                         INSERT OR REPLACE INTO agent_runs
                         (task_id, session_id, state, source, steps, tool_calls,
-                         tool_output_bytes, duration_ms, provider, model, error,
-                         reason, memory_references, content_length, prompt_length,
-                         started_at, finished_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         failed_tool_calls, tool_output_bytes, duration_ms, provider,
+                         model, error, reason, memory_references, content_length,
+                         prompt_length, started_at, finished_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         row,
                     )

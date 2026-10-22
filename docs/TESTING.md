@@ -194,9 +194,9 @@ Coverage:
   `limit_reached` exit 1. `agent history` is verified across a runtime
   restart, with metadata-only JSON and bounded limit validation.
 - **History persistence**: `tests/unit/agent/test_agent_history.py` covers
-  ordering, retention, redaction, corrupt-database isolation, and the
-  no-prompt/no-model-text rule; service tests prove a history failure never
-  blocks a run.
+  ordering, retention, redaction, corrupt-database isolation, v1?v2 schema
+  migration, failed-tool-call accounting, and the no-prompt/no-model-text
+  rule; service tests prove a history failure never blocks a run.
 
 ## 6d. Phase 6 baseline (workspace / planning / task + CLI wiring)
 
@@ -273,7 +273,7 @@ Coverage:
 
 ## 6g. Trust/control baseline (October 2026)
 
-- **1,270 tests collected**; full suite green, `ruff` + `mypy` clean
+- **1,271 tests collected**; full suite green, `ruff` + `mypy` clean
   (145 source files).
 - New suites: `tests/unit/agent/test_agent_approval_broker.py` (pending-only
   decisions, redacted previews, timeout cleanup), `tests/unit/observability/

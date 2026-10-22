@@ -293,6 +293,7 @@ class AgentRunStatus:
     state: AgentState = AgentState.CREATED
     steps: int = 0
     tool_calls: int = 0
+    failed_tool_calls: int = 0
     elapsed_ms: float = 0.0
     provider: str | None = None
     model: str | None = None
@@ -313,6 +314,7 @@ class AgentResult:
     state: AgentState
     steps: tuple[AgentStep, ...] = ()
     tool_calls: int = 0
+    failed_tool_calls: int = 0
     tool_output_bytes: int = 0
     duration_ms: float = 0.0
     final_text: str | None = None
@@ -329,6 +331,7 @@ class AgentResult:
             "state": self.state.value,
             "steps": len(self.steps),
             "tool_calls": self.tool_calls,
+            "failed_tool_calls": self.failed_tool_calls,
             "tool_output_bytes": self.tool_output_bytes,
             "duration_ms": self.duration_ms,
             "final_text": self.final_text,

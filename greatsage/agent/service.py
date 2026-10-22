@@ -186,6 +186,7 @@ class AgentService:
             except Exception as exc:
                 self._record_history_error(
                     task,
+                    status=status,
                     prompt=prompt,
                     source=source,
                     started_at=started_at,
@@ -314,6 +315,7 @@ class AgentService:
         self,
         task: AgentTask,
         *,
+        status: AgentRunStatus,
         prompt: str,
         source: str,
         started_at: datetime,
@@ -324,6 +326,9 @@ class AgentService:
             task_id=task.task_id,
             session_id=task.session_id,
             state=AgentState.FAILED,
+            tool_calls=status.tool_calls,
+            failed_tool_calls=status.failed_tool_calls,
+            duration_ms=status.elapsed_ms,
             provider=task.provider,
             model=task.model,
             error=f"{type(error).__name__}: {error}",
@@ -396,6 +401,7 @@ class AgentService:
                 "state": status.state.value,
                 "steps": status.steps,
                 "tool_calls": status.tool_calls,
+                "failed_tool_calls": status.failed_tool_calls,
                 "elapsed_ms": status.elapsed_ms,
                 "provider": status.provider,
                 "model": status.model,
