@@ -191,7 +191,13 @@ Coverage:
 - **Integration**: `greatsage agent health` (offline, exit 0, json), `agent
   run` with a scripted mock provider (one safe tool call, then final text),
   empty-prompt → exit 2, offline no-provider → exit 1, `--max-steps 1` →
-  `limit_reached` exit 1.
+  `limit_reached` exit 1. `agent history` is verified across a runtime
+  restart, with metadata-only JSON and bounded limit validation.
+- **History persistence**: `tests/unit/agent/test_agent_history.py` covers
+  ordering, retention, redaction, corrupt-database isolation, and the
+  no-prompt/no-model-text rule; service tests prove a history failure never
+  blocks a run.
+
 ## 6d. Phase 6 baseline (workspace / planning / task + CLI wiring)
 
 - New suites: `tests/unit/workspace/` (models, scanner — depth/entry caps,
@@ -267,8 +273,8 @@ Coverage:
 
 ## 6g. Trust/control baseline (October 2026)
 
-- **1,256 tests collected**; full suite green, `ruff` + `mypy` clean
-  (144 source files).
+- **1,270 tests collected**; full suite green, `ruff` + `mypy` clean
+  (145 source files).
 - New suites: `tests/unit/agent/test_agent_approval_broker.py` (pending-only
   decisions, redacted previews, timeout cleanup), `tests/unit/observability/
   test_audit.py` (append-only + redaction), `tests/unit/control/` (loopback
@@ -278,7 +284,8 @@ Coverage:
   background serve wiring, status/stop, stale-state cleanup),
   `tests/unit/observability/test_audit_view.py` + `tests/integration/
   test_cli_audit.py` (read-only tail/search, redaction, malformed lines,
-  missing-log behavior), `tests/unit/telegram/test_telegram_screenshot.py`
+  missing-log behavior), agent-run history views in `tests/unit/control/`,
+  `tests/unit/telegram/test_telegram_screenshot.py`
   (scoped approval, ToolService delegation), and
   `tests/unit/tools/test_network_security.py` (public-only targets,
   redirect validation).

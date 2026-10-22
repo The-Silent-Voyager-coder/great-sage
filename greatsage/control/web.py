@@ -210,6 +210,12 @@ INDEX_HTML = """<!doctype html>
       </section>
 
       <section class="panel">
+        <h2>Recent agent runs</h2>
+        <div id="runs" class="empty">No runs recorded.</div>
+        <div id="run-detail"></div>
+      </section>
+
+      <section class="panel">
         <h2>Plans</h2>
         <div id="plans" class="empty">No plans.</div>
         <div id="plan-detail"></div>
@@ -256,6 +262,7 @@ INDEX_HTML = """<!doctype html>
     const token = document.querySelector('meta[name="greatsage-token"]').content;
     const $ = (id) => document.getElementById(id);
     let refreshing = false;
+    let openRunId = null;
     let openPlanId = null;
     let openTaskId = null;
     let runActive = false;
@@ -290,6 +297,95 @@ INDEX_HTML = """<!doctype html>
         return "degraded";
       }
       return "unhealthy";
+    }
+
+    function renderRuns(items) {
+      const root = $("runs");
+      root.replaceChildren();
+      if (!items || items.length === 0) {
+        root.className = "empty";
+        root.textContent = "No runs recorded.";
+        return;
+      }
+      root.className = "";
+      for (const run of items) {
+        const item = text("div", null, "item");
+        const head = text("div", null, "item-head");
+        head.appendChild(text("strong", run.task_id || "run"));
+        head.appendChild(
+          text("span", run.state || "-", "badge " + badgeClass(run.state))
+        );
+        item.appendChild(head);
+        item.appendChild(
+          text(
+            "div",
+            (run.source || "agent") + " | steps " + (run.steps || 0) +
+              " | tools " + (run.tool_calls || 0) + " | " +
+              Math.round(run.duration_ms || 0) + " ms",
+            "muted"
+          )
+        );
+        item.addEventListener("click", () => showRun(run.task_id));
+        root.appendChild(item);
+      }
+    }
+
+    async function showRun(id) {
+      if (!id) return;
+      if (openRunId !== id) {
+        openRunId = id;
+        const loading = $("run-detail");
+        loading.replaceChildren();
+        loading.className = "detail";
+        loading.appendChild(text("div", "Loading run...", "muted"));
+      }
+      try {
+        const data = await api("/api/runs/" + encodeURIComponent(id));
+        if (openRunId !== id) return;
+        renderRunDetail(data.run || {});
+      } catch (err) {
+        if (openRunId === id) {
+          $("run-detail").replaceChildren(text("div", err.message, "error"));
+        }
+      }
+    }
+
+    function renderRunDetail(run) {
+      const root = $("run-detail");
+      root.replaceChildren();
+      root.className = "detail";
+      root.appendChild(text("div", run.task_id || "run", ""));
+      root.appendChild(
+        text(
+          "div",
+          "state " + (run.state || "-") + " | source " + (run.source || "-"),
+          "muted"
+        )
+      );
+      root.appendChild(
+        text(
+          "div",
+          "steps " + (run.steps || 0) + " | tools " + (run.tool_calls || 0) +
+            " | " + Math.round(run.duration_ms || 0) + " ms",
+          "muted"
+        )
+      );
+      if (run.provider) {
+        root.appendChild(
+          text("div", "provider " + run.provider + " | model " + (run.model || "-"), "muted")
+        );
+      }
+      if (run.content_length) {
+        root.appendChild(text("div", "output length " + run.content_length, "muted"));
+      }
+      if (run.finished_at) {
+        root.appendChild(text("div", "finished " + run.finished_at, "muted"));
+      }
+      if (run.error) root.appendChild(text("div", run.error, "error"));
+      if (run.reason) root.appendChild(text("div", run.reason, "muted"));
+      root.appendChild(
+        text("div", "Prompts and model output are not stored in run history.", "muted")
+      );
     }
 
     function renderPlans(items) {
@@ -676,11 +772,13 @@ INDEX_HTML = """<!doctype html>
       } else {
         $("run-state").textContent = "idle";
       }
+      renderRuns(state.runs || []);
       renderPlans(state.plans || []);
       renderTasks(state.tasks || []);
       renderApprovals(run.approvals || []);
       renderResult(run.result, run.kind);
       if (run.error) $("run-error").textContent = run.error;
+      if (openRunId) showRun(openRunId);
       if (openPlanId) showPlan(openPlanId);
       if (openTaskId) showTask(openTaskId);
     }

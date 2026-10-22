@@ -441,6 +441,8 @@ greatsage/agent/
 │                       ToolCallResult, AgentResult, AgentRunStatus,
 │                       AgentLimits (hard-ceilinged), AgentState (validated
 │                       state machine), AGENT_* event constants
+├── history.py          metadata-only SQLite run history under
+│                       core.data_dir/sage-agent-runs.db (no prompts/text)
 ├── limits.py           default limits + ceilings; the smaller applicable
 │                       limit wins (12/8/300/3/2MiB/3 defaults,
 │                       25/50/1800/10/16MiB/25 ceilings)
@@ -522,9 +524,17 @@ with `TOOL_CALLING` capability and `READY` state — otherwise typed errors
 (`AgentUnavailableError`, `ProviderUnavailableError`, `ProviderCapabilityError`),
 never silent fallback. It swaps in an `AgentApprovalProvider` before the run
 (restoring the previous provider after), retrieves bounded memory context,
-exposes `run(prompt, ...)`/`cancel()`/`health()`, registers the `agent`
-runtime health check (`available`/`status`/`enabled`/`detail`/`current`),
-and publishes `AGENT_*` events with exactly one terminal state per failure.
+exposes `run(prompt, ...)`/`cancel()`/`health()`/`history()`, registers the
+`agent` runtime health check
+(`available`/`status`/`enabled`/`detail`/`current`/`history`), and publishes
+`AGENT_*` events with exactly one terminal state per failure.
+
+Terminal runs are persisted to `core.data_dir/sage-agent-runs.db` as
+metadata only: task/session ids, state, step/tool counts, provider/model,
+timings, redacted error/reason, prompt length, and final-output length.
+Prompts and model text are never written to the history database. History
+failure (corrupt/locked/unavailable DB) disables the history view but never
+the run.
 
 ## 5.5 Workspace / Planning / Task Layer (Phase 6)
 

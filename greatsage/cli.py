@@ -61,6 +61,8 @@ Commands:
             read-only view of the newest append-only audit entries
     greatsage audit search QUERY [--limit N] [--config PATH] [--json]
             read-only audit search (newest matches first)
+    greatsage agent history [--limit N] [--config PATH] [--json]
+            recent terminal agent runs (metadata only; no prompts/model text)
 
 Exit codes: 0 success, 1 general failure, 2 invalid configuration/input.
 Memory content is never printed unless --content is passed.
@@ -458,6 +460,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--interactive",
         action="store_true",
         help="prompt on stdin for each ASK-level tool call (deny on EOF/timeout)",
+    )
+
+    agent_history = agent_sub.add_parser(
+        "history", help="recent terminal agent runs (metadata only)"
+    )
+    agent_history.add_argument(
+        "--config", metavar="PATH", default=None, help="configuration file to use"
+    )
+    agent_history.add_argument("--json", action="store_true", help="machine-readable output")
+    agent_history.add_argument(
+        "--limit", type=int, default=20, metavar="N", help="maximum entries (default 20)"
     )
 
     delegation_parser = subparsers.add_parser("delegation", help="delegation commands")
@@ -1341,6 +1354,14 @@ def _cmd_agent_health(args: argparse.Namespace) -> int:
     print(f"  available {data.get('available', False)}")
     print(f"  enabled   {data.get('enabled', '-')}")
     print(f"  detail    {data.get('detail') or ''}")
+    history = data.get("history") or {}
+    if history:
+        print(
+            f"  history   available={history.get('available', False)} "
+            f"runs={history.get('runs', 0)}"
+        )
+        if history.get("detail"):
+            print(f"            {history['detail']}")
     current = data.get("current") or {}
     if current:
         print(f"  current   state={current.get('state')} steps={current.get('steps')} "
@@ -1411,6 +1432,7 @@ def _run_agent_interactive(
                     model=model,
                     max_steps=max_steps,
                     approval=broker,
+                    source="cli",
                 )
             )
         except BaseException as exc:  # re-raised on the CLI thread below
@@ -1472,6 +1494,7 @@ def _cmd_agent_run(args: argparse.Namespace) -> int:
                 provider=args.provider,
                 model=args.model,
                 max_steps=args.max_steps,
+                source="cli",
             )
     except (AgentUnavailableError, ProviderCapabilityError) as exc:
         print(f"greatsage agent run: {exc}", file=sys.stderr)
@@ -1505,6 +1528,51 @@ def _cmd_agent_run(args: argparse.Namespace) -> int:
     for line in (result.final_text or "(none)").splitlines():
         print(f"    {line}")
     return EXIT_OK if completed else EXIT_FAILURE
+
+
+def _cmd_agent_history(args: argparse.Namespace) -> int:
+    if args.limit < 1 or args.limit > 200:
+        print("greatsage agent history: --limit must be 1..200", file=sys.stderr)
+        return EXIT_INVALID
+    try:
+        runtime = _runtime_from_args(args)
+    except ConfigurationError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_INVALID
+    try:
+        entries = runtime.agent.history(limit=args.limit)
+        history_health = runtime.agent.history_health()
+    finally:
+        asyncio.run(runtime.stop())
+    if args.json:
+        print(json.dumps(entries, indent=2))
+    elif not entries:
+        print("No agent runs recorded.")
+    else:
+        print("Great Sage Agent History")
+        for entry in entries:
+            print(
+                f"  {entry.get('finished_at', '-')}  "
+                f"{entry.get('state', '-')}  "
+                f"source={entry.get('source', '-')}  "
+                f"task={entry.get('task_id', '-')}"
+            )
+            print(
+                f"    steps={entry.get('steps', 0)} "
+                f"tools={entry.get('tool_calls', 0)} "
+                f"duration_ms={float(entry.get('duration_ms') or 0):.0f} "
+                f"provider={entry.get('provider') or '-'} "
+                f"model={entry.get('model') or '-'}"
+            )
+            if entry.get("error"):
+                print(f"    error={entry['error']}")
+            if entry.get("reason"):
+                print(f"    reason={entry['reason']}")
+    if not history_health.get("available") and not entries:
+        detail = history_health.get("detail") or "history unavailable"
+        print(f"greatsage agent history: {detail}", file=sys.stderr)
+        return EXIT_FAILURE
+    return EXIT_OK
 
 
 def _runtime_from_args(args: argparse.Namespace) -> Runtime:
@@ -3206,7 +3274,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_agent_health(args)
         if args.agent_command == "run":
             return _cmd_agent_run(args)
-        parser.error("agent requires a subcommand: health, run")
+        if args.agent_command == "history":
+            return _cmd_agent_history(args)
+        parser.error("agent requires a subcommand: health, run, history")
     if args.command == "delegation":
         if args.delegation_command == "health":
             return _cmd_delegation_health(args)

@@ -169,6 +169,68 @@ def test_agent_run_safe_loop(
     assert "System checked via agent loop." in out
 
 
+def test_agent_history_survives_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = write_agent_config(tmp_path)
+    with monkeypatch.context() as context:
+        context.setattr(cli_module, "_runtime_from_args", _start_runtime_with_mock)
+        code = main(
+            ["agent", "run", "--prompt", "check the system", "--config", str(config)]
+        )
+    assert code == EXIT_OK
+    capsys.readouterr()
+
+    code = main(["agent", "history", "--config", str(config)])
+
+    captured = capsys.readouterr()
+    assert code == EXIT_OK
+    assert "Great Sage Agent History" in captured.out
+    assert "completed" in captured.out
+    assert "source=cli" in captured.out
+    assert "task=" in captured.out
+    assert "system.info" not in captured.out
+
+
+def test_agent_history_json_and_limit_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = write_agent_config(tmp_path)
+    with monkeypatch.context() as context:
+        context.setattr(cli_module, "_runtime_from_args", _start_runtime_with_mock)
+        assert (
+            main(
+                ["agent", "run", "--prompt", "check the system", "--config", str(config)]
+            )
+            == EXIT_OK
+        )
+    capsys.readouterr()
+
+    code = main(
+        ["agent", "history", "--json", "--limit", "1", "--config", str(config)]
+    )
+    captured = capsys.readouterr()
+    assert code == EXIT_OK
+    assert '"state": "completed"' in captured.out
+    assert '"source": "cli"' in captured.out
+    assert "final_text" not in captured.out
+
+    code = main(["agent", "history", "--limit", "0", "--config", str(config)])
+    assert code == EXIT_INVALID
+    assert "--limit must be 1..200" in capsys.readouterr().err
+
+
+def test_agent_history_empty_after_start(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = write_agent_config(tmp_path)
+    code = main(["agent", "history", "--config", str(config)])
+
+    captured = capsys.readouterr()
+    assert code == EXIT_OK
+    assert "No agent runs recorded." in captured.out
+
+
 def test_agent_run_interactive_approves_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from greatsage.control.views import plan_detail, task_detail, task_report
+from greatsage.control.views import (
+    agent_run_detail,
+    agent_run_summary,
+    plan_detail,
+    task_detail,
+    task_report,
+)
 
 _SECRET = "sk-ABCDEFGHIJKLMNOPQRSTUV"
 
@@ -62,6 +68,42 @@ def test_task_detail_omits_step_output_and_redacts_errors() -> None:
     assert _SECRET not in view["error"]
     assert "output" not in view["step_results"][0]
     assert _SECRET not in str(view)
+
+
+def test_agent_run_view_omits_prompts_and_model_text_and_redacts_errors() -> None:
+    run = {
+        "task_id": "task_1",
+        "session_id": "s1",
+        "state": "failed",
+        "source": "control",
+        "steps": 2,
+        "tool_calls": 1,
+        "duration_ms": 12.0,
+        "provider": "local",
+        "model": "llama3.2:1b",
+        "error": f"failed: {_SECRET}",
+        "reason": "provider error",
+        "content_length": 100,
+        "prompt_length": 25,
+        "tool_output_bytes": 10,
+        "memory_references": 1,
+        "final_text": _SECRET,
+        "prompt": _SECRET,
+        "started_at": "2026-10-22T00:00:00+00:00",
+        "finished_at": "2026-10-22T00:00:01+00:00",
+    }
+
+    summary = agent_run_summary(run)
+    detail = agent_run_detail(run)
+
+    assert summary["task_id"] == "task_1"
+    assert summary["source"] == "control"
+    assert summary["content_length"] == 100
+    assert "final_text" not in summary
+    assert "prompt" not in summary
+    assert detail["prompt_length"] == 25
+    assert _SECRET not in str(summary)
+    assert _SECRET not in str(detail)
 
 
 def test_task_report_omits_step_output() -> None:

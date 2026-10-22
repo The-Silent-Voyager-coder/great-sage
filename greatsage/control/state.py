@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any
 
 from greatsage.agent.approval_broker import ApprovalBroker
 from greatsage.control.views import (
+    agent_run_detail,
+    agent_run_summary,
     plan_detail,
     plan_summary,
     task_detail,
@@ -44,6 +46,7 @@ _MAX_FINAL_TEXT = 20_000
 _MAX_ERROR_TEXT = 4_000
 _MAX_PLANS = 25
 _MAX_TASKS = 25
+_MAX_RUNS = 20
 _HEALTH_CACHE_SECONDS = 2.0
 
 
@@ -236,15 +239,54 @@ class ControlState:
             tasks = self.list_tasks()
         except Exception:
             tasks = []
+        try:
+            runs = self.list_agent_runs()
+        except Exception:
+            runs = []
         return {
             "status": self._health_snapshot(),
             "agent": agent_health,
             "planning": planning_health,
             "task": task_health,
             "run": self.run_snapshot(),
+            "runs": runs,
             "plans": plans,
             "tasks": tasks,
         }
+
+    # --- agent history -------------------------------------------------
+
+    def list_agent_runs(self) -> list[dict[str, Any]]:
+        history = getattr(self._runtime.agent, "history", None)
+        if history is None:
+            return []
+        try:
+            entries = history(limit=_MAX_RUNS)
+        except Exception as exc:
+            log.warning(
+                "control-plane agent history failed: %s",
+                exc,
+                extra={"component": "control"},
+            )
+            return []
+        return [
+            agent_run_summary(entry)
+            for entry in entries[:_MAX_RUNS]
+            if isinstance(entry, dict)
+        ]
+
+    def get_agent_run(self, task_id: Any) -> dict[str, Any]:
+        identifier = _identifier(task_id, "task_id")
+        getter = getattr(self._runtime.agent, "history_get", None)
+        if getter is None:
+            raise ControlNotFoundError(f"agent run not found: {identifier}")
+        try:
+            entry = getter(identifier)
+        except Exception as exc:
+            raise ControlUnavailableError(f"agent history unavailable: {exc}") from exc
+        if not entry:
+            raise ControlNotFoundError(f"agent run not found: {identifier}")
+        return agent_run_detail(entry)
 
     # --- plan/task read paths ------------------------------------------
 
@@ -355,6 +397,7 @@ class ControlState:
                 model=model,
                 max_steps=max_steps,
                 approval=broker,
+                source="control",
             )
             data = result.to_dict()
             text = data.get("final_text")

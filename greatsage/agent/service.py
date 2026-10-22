@@ -10,10 +10,13 @@ the ToolService security pipeline — the CLI uses exactly the same path.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from greatsage.agent.approval import AgentApprovalProvider, NotifyingApprovalProvider
 from greatsage.agent.cancellation import CancellationToken
+from greatsage.agent.history import AgentHistoryError, AgentRunStore
 from greatsage.agent.models import (
     AgentContext,
     AgentLimits,
@@ -65,10 +68,13 @@ class AgentService:
         self._config: SageConfig | None = None
         self._status: AgentRunStatus | None = None
         self._token: CancellationToken | None = None
+        self._history: AgentRunStore | None = None
+        self._history_detail: str = "agent history not initialized"
 
     # --- lifecycle -----------------------------------------------------
 
     def start(self, config: SageConfig | None = None) -> None:
+        self._close_history()
         self._config = config
         if config is None:
             self.availability = "unavailable"
@@ -78,6 +84,7 @@ class AgentService:
             self.availability = "disabled"
             self.detail = "agent subsystem disabled by configuration"
             return
+        self._open_history(config)
         self.availability = "healthy"
         self.detail = (
             f"agent loop ready (steps<={config.agent.max_steps}, "
@@ -98,6 +105,7 @@ class AgentService:
     def shutdown(self) -> None:
         self._status = None
         self._token = None
+        self._close_history()
         self.availability = "disabled"
         self.detail = "agent service stopped"
         log.info("agent service stopped", extra={"component": "agent"})
@@ -114,6 +122,7 @@ class AgentService:
         model: str | None = None,
         max_steps: int | None = None,
         approval: ApprovalProvider | None = None,
+        source: str = "agent",
     ) -> AgentResult:
         """Run one bounded agent task to a terminal state (blocks)."""
         self._require_available()
@@ -164,14 +173,33 @@ class AgentService:
             # custom provider (CLI broker, future UI provider).
             agent_approval = NotifyingApprovalProvider(approval, _on_pending)
         self._tools.approval = agent_approval
+        started_at = datetime.now(UTC)
         try:
-            result = AgentOrchestrator(
-                self._intelligence, self._tools, publisher=self.publisher
-            ).run(task, context, limits, status, token=token)
+            try:
+                result = AgentOrchestrator(
+                    self._intelligence, self._tools, publisher=self.publisher
+                ).run(task, context, limits, status, token=token)
+            except Exception as exc:
+                self._record_history_error(
+                    task,
+                    prompt=prompt,
+                    source=source,
+                    started_at=started_at,
+                    finished_at=datetime.now(UTC),
+                    error=exc,
+                )
+                raise
         finally:
             self._tools.approval = previous_approval
             self._status = None
             self._token = None
+        self._record_history(
+            result,
+            prompt=prompt,
+            source=source,
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+        )
         return result
 
     def cancel(self) -> None:
@@ -184,6 +212,125 @@ class AgentService:
                 self._intelligence.cancel(status.request_id)
             except Exception as exc:
                 log.debug("agent cancel failed: %s", exc)
+
+    # --- history -------------------------------------------------------
+
+    def history(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Return recent terminal runs (metadata only), newest first."""
+        store = self._history
+        if store is None:
+            return []
+        try:
+            return store.list(limit)
+        except AgentHistoryError as exc:
+            log.warning(
+                "agent history read failed: %s",
+                exc,
+                extra={"component": "agent"},
+            )
+            return []
+
+    def history_get(self, task_id: str) -> dict[str, Any] | None:
+        store = self._history
+        if store is None:
+            return None
+        try:
+            return store.get(task_id)
+        except AgentHistoryError as exc:
+            log.warning(
+                "agent history read failed: %s",
+                exc,
+                extra={"component": "agent"},
+            )
+            return None
+
+    def history_health(self) -> dict[str, Any]:
+        store = self._history
+        if store is None:
+            return {
+                "available": False,
+                "schema_version": 0,
+                "database_path": "",
+                "runs": 0,
+                "detail": self._history_detail,
+            }
+        return store.health().to_dict()
+
+    def _open_history(self, config: SageConfig) -> None:
+        path = Path(config.core.data_dir) / "sage-agent-runs.db"
+        store = AgentRunStore(path)
+        try:
+            store.initialize()
+        except AgentHistoryError as exc:
+            self._history = None
+            self._history_detail = str(exc)
+            log.warning(
+                "agent history disabled: %s",
+                exc,
+                extra={"component": "agent", "path": str(path)},
+            )
+            return
+        self._history = store
+        self._history_detail = f"history database: {path}"
+
+    def _close_history(self) -> None:
+        if self._history is not None:
+            self._history.close()
+            self._history = None
+            self._history_detail = "agent history not initialized"
+
+    def _record_history(
+        self,
+        result: AgentResult,
+        *,
+        prompt: str,
+        source: str,
+        started_at: datetime,
+        finished_at: datetime,
+    ) -> None:
+        store = self._history
+        if store is None:
+            return
+        try:
+            store.record(
+                result,
+                source=source,
+                prompt_length=len(prompt),
+                started_at=started_at,
+                finished_at=finished_at,
+            )
+        except Exception as exc:  # history must never fail the run
+            log.warning(
+                "agent history write failed: %s",
+                exc,
+                extra={"component": "agent"},
+            )
+
+    def _record_history_error(
+        self,
+        task: AgentTask,
+        *,
+        prompt: str,
+        source: str,
+        started_at: datetime,
+        finished_at: datetime,
+        error: Exception,
+    ) -> None:
+        result = AgentResult(
+            task_id=task.task_id,
+            session_id=task.session_id,
+            state=AgentState.FAILED,
+            provider=task.provider,
+            model=task.model,
+            error=f"{type(error).__name__}: {error}",
+        )
+        self._record_history(
+            result,
+            prompt=prompt,
+            source=source,
+            started_at=started_at,
+            finished_at=finished_at,
+        )
 
     def delegate(self, request: DelegationRequest) -> DelegationResult:
         """Delegate a coding task to an executor under Great Sage authority.
@@ -257,6 +404,7 @@ class AgentService:
             "detail": self.detail,
             "enabled": bool(self._config is not None and self._config.agent.enabled),
             "current": current,
+            "history": self.history_health(),
         }
 
     def register_health_check(self, health_registry: HealthRegistry) -> None:

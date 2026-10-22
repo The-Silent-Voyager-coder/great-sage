@@ -251,7 +251,13 @@ Rules:
 Environment override convention: `GREATSAGE_AGENT__MAX_STEPS`,
 `GREATSAGE_AGENT__ENABLED`.
 
-CLI: `greatsage agent health|run [--config PATH] [--json]`. See
+Agent-run history is derived from the configured data root rather than a
+separate key: `core.data_dir/sage-agent-runs.db` (metadata only; no prompts or
+model text). There is no `agent.history_*` configuration section in this
+release. A corrupt/locked history database only disables the history view;
+agent runs still execute.
+
+CLI: `greatsage agent health|run|history [--config PATH] [--json]`. See
 `docs/AGENTS.md` for the full agent-system contract.
 ## 11. Workspace / Planning / Task Sections (Phase 6)
 

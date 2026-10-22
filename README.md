@@ -33,9 +33,9 @@ human control surface around it:
 - Provider health recovers to `READY` after a successful probe.
 - Failed task steps are retried on explicit resume.
 - Local control plane: `greatsage serve` exposes a loopback-only dashboard
-  for pending approvals, bounded agent runs, and explicit approved READY
-  plan/task runs through the same pipeline.
-- Full suite: **1,256 tests collected**, passing; `ruff` and `mypy` clean.
+  for pending approvals, bounded agent runs, explicit approved READY
+  plan/task runs, and persisted recent-run metadata through the same pipeline.
+- Full suite: **1,270 tests collected**, passing; `ruff` and `mypy` clean.
 
 ## Phase 4 — Tool System
 
@@ -98,7 +98,7 @@ Phase 5A adds the bounded, auditable AI↔tool loop on top of all four layers:
 - **Cooperative cancellation** at every checkpoint + wall-clock timeout +
   `AGENT_*` audit events (no prompts, no secrets; Phase 4 `TOOL_*` events
   keep flowing)
-- **CLI**: `greatsage agent health|run --prompt … [--json]`; exit 0/1/2
+- **CLI**: `greatsage agent health|run|history [--json]`; exit 0/1/2
 - **Tests**: full agent unit suite (incl. a threaded approval-deadlock
   regression), offline CLI integration suite, scripted mock-provider
   tool-call tests; ruff + mypy clean
@@ -222,6 +222,8 @@ python -m venv .venv
 .\.venv\Scripts\greatsage.exe agent run --prompt "summarize this repo"
 .\.venv\Scripts\greatsage.exe agent run --prompt "check the system" --json
 # runs are always bounded: step/tool-call/wall-clock limits with ceilings
+.\.venv\Scripts\greatsage.exe agent history --limit 10
+# persisted metadata only: no prompts or model output
 
 # local control plane: approvals + bounded agent runs + approved READY plans
 .\.venv\Scripts\greatsage.exe serve --port 8765
