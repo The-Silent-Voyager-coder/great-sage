@@ -12,6 +12,7 @@ def test_plan_detail_redacts_arguments_and_bounds_text() -> None:
         "id": "plan_1",
         "goal": "g" * 5000,
         "status": "ready",
+        "metadata": {"task_id": "task_1"},
         "steps": [
             {
                 "id": "step_1",
@@ -28,6 +29,7 @@ def test_plan_detail_redacts_arguments_and_bounds_text() -> None:
     view = plan_detail(plan)
 
     assert len(view["goal"]) <= 420
+    assert view["task_id"] == "task_1"
     assert len(view["steps"][0]["description"]) <= 420
     assert _SECRET not in view["steps"][0]["arguments_preview"]
     assert "out.txt" in view["steps"][0]["arguments_preview"]

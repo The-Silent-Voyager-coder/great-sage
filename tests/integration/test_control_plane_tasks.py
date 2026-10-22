@@ -45,7 +45,9 @@ def test_control_state_runs_ready_plan_through_task_service(
         task = state.get_task(result["task_id"])
         assert task["state"] == "completed"
         assert task["step_results"][0]["success"] is True
-        assert state.get_plan(plan_id)["status"] == "ready"
+        plan = state.get_plan(plan_id)
+        assert plan["status"] == "completed"
+        assert plan["task_id"] == result["task_id"]
 
         snapshot = state.snapshot()
         assert snapshot["run"]["result"]["state"] == "completed"

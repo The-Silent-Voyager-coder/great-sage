@@ -310,7 +310,12 @@ INDEX_HTML = """<!doctype html>
         );
         item.appendChild(head);
         item.appendChild(
-          text("div", (plan.step_count || 0) + " steps | " + plan.id, "muted")
+          text(
+            "div",
+            (plan.step_count || 0) + " steps | " + plan.id +
+              (plan.task_id ? " | task " + plan.task_id : ""),
+            "muted"
+          )
         );
         item.addEventListener("click", () => showPlan(plan.id));
         root.appendChild(item);
@@ -351,6 +356,9 @@ INDEX_HTML = """<!doctype html>
       );
       if (plan.workspace_root) {
         root.appendChild(text("div", "workspace " + plan.workspace_root, "muted"));
+      }
+      if (plan.task_id) {
+        root.appendChild(text("div", "task " + plan.task_id, "muted"));
       }
       for (const step of plan.steps || []) {
         const card = text("div", null, "step");
