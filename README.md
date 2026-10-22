@@ -35,7 +35,7 @@ human control surface around it:
 - Local control plane: `greatsage serve` exposes a loopback-only dashboard
   for pending approvals, bounded agent runs, and explicit approved READY
   plan/task runs through the same pipeline.
-- Full suite: **1,239 tests collected**, passing; `ruff` and `mypy` clean.
+- Full suite: **1,256 tests collected**, passing; `ruff` and `mypy` clean.
 
 ## Phase 4 — Tool System
 
@@ -231,6 +231,10 @@ python -m venv .venv
 .\.venv\Scripts\greatsage.exe serve --background --port 8765
 .\.venv\Scripts\greatsage.exe serve status
 .\.venv\Scripts\greatsage.exe serve stop
+
+# read-only audit inspection (append-only log stays untouched)
+.\.venv\Scripts\greatsage.exe audit tail --lines 20
+.\.venv\Scripts\greatsage.exe audit search "ToolDenied" --limit 20
 
 # inspect and drive controlled delegation (needs OpenCode server at 127.0.0.1:4096)
 .\.venv\Scripts\greatsage.exe delegation health

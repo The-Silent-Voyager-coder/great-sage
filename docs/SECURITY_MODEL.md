@@ -71,6 +71,10 @@ payloads, and redacts secret-shaped values. CLI commands run after the startup
 event loop closes; `EventBus.publish_nowait` dispatches synchronous sinks
 inline so CLI tool actions are audited too.
 
+`greatsage audit tail|search` is read-only: it never creates, truncates,
+rotates, or rewrites the log. Entries are redacted again on read; malformed
+lines become redacted `raw` records rather than crashing the view.
+
 ## 6. Threads (Phase 9 scope — see §10 for what shipped)
 
 - Permission manager with policy file (`security.policy` section of config).

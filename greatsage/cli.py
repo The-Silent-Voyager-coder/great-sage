@@ -57,6 +57,10 @@ Commands:
     greatsage serve [--background|status|stop] [--config PATH]
             loopback dashboard (foreground by default; status/stop manage a
             detached background process)
+    greatsage audit tail [--lines N] [--config PATH] [--json]
+            read-only view of the newest append-only audit entries
+    greatsage audit search QUERY [--limit N] [--config PATH] [--json]
+            read-only audit search (newest matches first)
 
 Exit codes: 0 success, 1 general failure, 2 invalid configuration/input.
 Memory content is never printed unless --content is passed.
@@ -223,6 +227,28 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="start a detached background server and return",
     )
+
+    audit_parser = subparsers.add_parser(
+        "audit", help="read-only audit log inspection"
+    )
+    audit_sub = audit_parser.add_subparsers(dest="audit_command", metavar="SUBCOMMAND")
+    audit_tail = audit_sub.add_parser("tail", help="show the newest audit entries")
+    audit_tail.add_argument(
+        "--lines", type=int, default=20, metavar="N", help="number of entries (default 20)"
+    )
+    audit_tail.add_argument(
+        "--config", metavar="PATH", default=None, help="configuration file to use"
+    )
+    audit_tail.add_argument("--json", action="store_true", help="machine-readable output")
+    audit_search = audit_sub.add_parser("search", help="search audit entries (newest first)")
+    audit_search.add_argument("query", metavar="QUERY", help="case-insensitive text to find")
+    audit_search.add_argument(
+        "--limit", type=int, default=50, metavar="N", help="maximum matches (default 50)"
+    )
+    audit_search.add_argument(
+        "--config", metavar="PATH", default=None, help="configuration file to use"
+    )
+    audit_search.add_argument("--json", action="store_true", help="machine-readable output")
 
     chat_parser = subparsers.add_parser("chat", help="conversation loop (voice or text)")
     chat_parser.add_argument(
@@ -2378,6 +2404,90 @@ def _cmd_telegram_listen(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+# --- audit ---------------------------------------------------------------
+
+
+def _audit_log_path(args: argparse.Namespace) -> Path:
+    loaded = load_config(args.config)
+    return loaded.config.security.audit_log
+
+
+def _cmd_audit_tail(args: argparse.Namespace) -> int:
+    from greatsage.observability.audit_view import (
+        TAIL_MAX,
+        AuditLogError,
+        describe,
+        tail_audit,
+    )
+
+    if args.lines < 1 or args.lines > TAIL_MAX:
+        print(
+            f"greatsage audit tail: --lines must be 1..{TAIL_MAX}",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID
+    try:
+        path = _audit_log_path(args)
+        entries = tail_audit(path, lines=args.lines)
+    except ConfigurationError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_INVALID
+    except AuditLogError as exc:
+        print(f"greatsage audit tail: {exc}", file=sys.stderr)
+        return EXIT_FAILURE
+    if args.json:
+        print(json.dumps(entries, indent=2))
+        return EXIT_OK
+    if not entries:
+        print("Audit log is empty.")
+        return EXIT_OK
+    for entry in entries:
+        print(describe(entry))
+    return EXIT_OK
+
+
+def _cmd_audit_search(args: argparse.Namespace) -> int:
+    from greatsage.observability.audit_view import (
+        QUERY_MAX,
+        SEARCH_MAX,
+        AuditLogError,
+        describe,
+        search_audit,
+    )
+
+    query = str(args.query or "").strip()
+    if not query or len(query) > QUERY_MAX:
+        print(
+            f"greatsage audit search: query must be 1..{QUERY_MAX} characters",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID
+    if args.limit < 1 or args.limit > SEARCH_MAX:
+        print(
+            f"greatsage audit search: --limit must be 1..{SEARCH_MAX}",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID
+    try:
+        path = _audit_log_path(args)
+        entries = search_audit(path, query, limit=args.limit)
+    except ConfigurationError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_INVALID
+    except AuditLogError as exc:
+        print(f"greatsage audit search: {exc}", file=sys.stderr)
+        return EXIT_FAILURE
+    if args.json:
+        print(json.dumps(entries, indent=2))
+        return EXIT_OK
+    if not entries:
+        print("No audit entries matched.")
+        return EXIT_OK
+    for entry in entries:
+        print(describe(entry))
+    return EXIT_OK
+
+
 # --- control plane -------------------------------------------------------
 
 
@@ -3047,6 +3157,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_chat(args)
     if args.command == "serve":
         return _cmd_serve(args)
+    if args.command == "audit":
+        if args.audit_command == "tail":
+            return _cmd_audit_tail(args)
+        if args.audit_command == "search":
+            return _cmd_audit_search(args)
+        parser.error("audit requires a subcommand: tail, search")
     if args.command == "ai":
         if args.ai_command == "health":
             return _cmd_ai_health(args)

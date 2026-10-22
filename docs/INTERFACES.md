@@ -790,3 +790,16 @@ greatsage serve stop [--config PATH]
 
 The read-only `interface` HUD remains unchanged; `control/` is the separate,
 interactive module.
+
+## 14. Audit Inspection (read-only)
+
+```text
+greatsage audit tail [--lines N] [--config PATH] [--json]
+greatsage audit search QUERY [--limit N] [--config PATH] [--json]
+```
+
+`tail` returns the newest entries (default 20, max 200); `search` returns the
+newest matches first (default 50, max 500). Both read
+`security.audit_log`, never create or modify it, and re-apply secret redaction
+on read. Text mode prints a bounded operational line; `--json` prints the
+parsed entries, with malformed lines surfaced as redacted `raw` records.
