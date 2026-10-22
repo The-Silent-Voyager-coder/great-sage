@@ -687,6 +687,11 @@ class TaskService:        # greatsage/task/service.py
     def health(self) -> dict: ...   # available/status/enabled/detail
 ```
 
+Plan lifecycle mirrors task execution: `READY → RUNNING → COMPLETED |
+FAILED | CANCELLED` (`TIMED_OUT` maps to `FAILED`). The plan's
+`metadata.task_id` identifies the authoritative task; `resume` moves the
+plan back to `RUNNING` and applies the terminal mapping again.
+
 ### CLI
 
 ```text
@@ -746,7 +751,8 @@ greatsage serve [--host 127.0.0.1] [--port 8765] [--config PATH]
 - `GET /api/state` — HUD status, agent/planning/task health, current/last
   execution, pending approvals, and bounded plan/task summaries.
 - `GET /api/plans` / `GET /api/plans/<plan_id>` — read-only plan summaries and
-  detail (steps, tool ids, risk estimates, redacted/bounded argument previews).
+  detail (status, linked `task_id`, steps, tool ids, risk estimates,
+  redacted/bounded argument previews).
 - `POST /api/plans/<plan_id>/approve` — body `{"approved": true}`; runs the
   existing planning verification/human gate (DRAFT → READY).
 - `POST /api/plans/<plan_id>/run` — body `{"approved": true}`; only READY

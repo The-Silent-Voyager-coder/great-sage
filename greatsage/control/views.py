@@ -68,12 +68,21 @@ def _step_view(step: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _plan_task_id(plan: dict[str, Any]) -> str | None:
+    metadata = plan.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    task_id = metadata.get("task_id")
+    return _optional_text(task_id, 120)
+
+
 def plan_summary(plan: dict[str, Any]) -> dict[str, Any]:
     steps = plan.get("steps")
     return {
         "id": str(plan.get("id", "")),
         "goal": safe_text(plan.get("goal", ""), MAX_GOAL),
         "status": str(plan.get("status", "")),
+        "task_id": _plan_task_id(plan),
         "step_count": len(steps) if isinstance(steps, list) else 0,
         "updated_at": plan.get("updated_at"),
         "workspace_root": _optional_text(plan.get("workspace_root"), MAX_GOAL),

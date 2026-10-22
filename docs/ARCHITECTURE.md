@@ -562,6 +562,13 @@ mirroring the Phase 4 registry) and never executes anything — execution
 belongs to the task executor. Phase 7 (autonomy) adds the planner +
 task-graph + verification loop on top; it must not bypass these facades.
 
+The task service mirrors execution state onto the linked plan:
+`READY → RUNNING → COMPLETED | FAILED | CANCELLED` (`TIMED_OUT` maps to
+`FAILED`). The plan's `metadata.task_id` records the authoritative task, so
+the dashboard can show the relationship and a finished task never leaves its
+plan stuck at `READY`. Resume reopens the plan to `RUNNING` and applies the
+same terminal mapping.
+
 Phases 6 (voice), 8 (vision), 10 (HUD) ship as sibling subsystems with
 their own CLIs (`greatsage voice|vision|hud …`); vision currently has no
 `vision.*` config section (config-independent service — see integration

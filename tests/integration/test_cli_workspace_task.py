@@ -275,12 +275,24 @@ def test_task_resume_retries_failed_step(
     tasks = json.loads(capsys.readouterr().out)
     task_id = tasks[0]["id"]
 
+    code = main(["planning", "get", "plan_resume", "--config", str(cfg), "--json"])
+    assert code == EXIT_OK
+    failed_plan = json.loads(capsys.readouterr().out)
+    assert failed_plan["status"] == "failed"
+    assert failed_plan["metadata"]["task_id"] == task_id
+
     (ws / "later.txt").write_text("now present", encoding="utf-8")
     code = main(["task", "resume", task_id, "--config", str(cfg)])
     captured = capsys.readouterr()
     assert code == EXIT_OK
     assert "state    completed" in captured.out
     assert (ws / "resumed.txt").read_text(encoding="utf-8") == "resumed"
+
+    code = main(["planning", "get", "plan_resume", "--config", str(cfg), "--json"])
+    assert code == EXIT_OK
+    completed_plan = json.loads(capsys.readouterr().out)
+    assert completed_plan["status"] == "completed"
+    assert completed_plan["metadata"]["task_id"] == task_id
 
 
 def test_task_resume_approve_retries_medium_step(

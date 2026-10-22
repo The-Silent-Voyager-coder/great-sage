@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import uuid
@@ -48,6 +49,17 @@ class _TaskScopedApprovalProvider:
         if self._fallback is not None:
             return self._fallback.request_approval(request, tool, reason)
         return ApprovalOutcome.DENIED
+
+
+_PLAN_STATUS_BY_TASK_STATE: dict[TaskState, PlanStatus] = {
+    TaskState.PENDING: PlanStatus.RUNNING,
+    TaskState.RUNNING: PlanStatus.RUNNING,
+    TaskState.PAUSED: PlanStatus.RUNNING,
+    TaskState.COMPLETED: PlanStatus.COMPLETED,
+    TaskState.FAILED: PlanStatus.FAILED,
+    TaskState.CANCELLED: PlanStatus.CANCELLED,
+    TaskState.TIMED_OUT: PlanStatus.FAILED,
+}
 
 
 class TaskService:
@@ -152,6 +164,49 @@ class TaskService:
             raise TaskValidationError(f"plan not found: {plan_ref}")
         return plan
 
+    def _sync_plan_status(
+        self, plan: Plan, task_id: str, status: PlanStatus
+    ) -> None:
+        """Persist the plan's execution state and its linked task id.
+
+        The task database remains authoritative for execution state; this
+        keeps the planning view coherent for the dashboard and prevents a
+        completed task from leaving its plan stuck at READY.
+        """
+        assert self._planning_repo is not None
+        current = self._planning_repo.get(plan.id) or plan
+        metadata = dict(current.metadata)
+        metadata["task_id"] = task_id
+        updated = dataclasses.replace(
+            current,
+            status=status,
+            updated_at=datetime.now(UTC),
+            metadata=metadata,
+        )
+        self._planning_repo.save(updated)
+
+    def _sync_plan_from_task(self, plan: Plan, task_id: str) -> None:
+        """Best-effort terminal sync after an executor exception."""
+        assert self._repository is not None
+        record = self._repository.get_task(task_id)
+        status = PlanStatus.FAILED
+        if record is not None and record.state in (
+            TaskState.COMPLETED,
+            TaskState.FAILED,
+            TaskState.CANCELLED,
+            TaskState.TIMED_OUT,
+        ):
+            status = _PLAN_STATUS_BY_TASK_STATE[record.state]
+        try:
+            self._sync_plan_status(plan, task_id, status)
+        except Exception as exc:  # pragma: no cover - persistence failure path
+            log.warning(
+                "plan status sync failed for %s: %s",
+                plan.id,
+                exc,
+                extra={"component": "task", "task_id": task_id},
+            )
+
     def run(
         self,
         plan: str | Path | dict[str, Any] | Plan,
@@ -198,6 +253,7 @@ class TaskService:
             metadata={"workspace_root": str(plan_obj.workspace_root) if plan_obj.workspace_root else None, "human_approved": bool(approved)},  # noqa: E501
         )
         self._repository.create_task(record)
+        self._sync_plan_status(plan_obj, tid, PlanStatus.RUNNING)
         token = CancellationToken()
         self._tokens[tid] = token
         # Ensure executor publisher is current
@@ -214,7 +270,15 @@ class TaskService:
                 total_timeout=self._config.task.total_timeout_seconds,
                 cancellation=token,
             )
+            self._sync_plan_status(
+                plan_obj,
+                tid,
+                _PLAN_STATUS_BY_TASK_STATE.get(report.state, PlanStatus.FAILED),
+            )
             return report
+        except Exception:
+            self._sync_plan_from_task(plan_obj, tid)
+            raise
         finally:
             if approved:
                 self._tools.approval = previous_approval
@@ -235,6 +299,12 @@ class TaskService:
             raise TaskValidationError(f"plan not found for task: {record.plan_id}")
         if record.state in (TaskState.COMPLETED, TaskState.CANCELLED):
             # Completed/cancelled tasks stay terminal; return the stored report.
+            # Repair plans created before status mirroring existed.
+            self._sync_plan_status(
+                plan,
+                task_id,
+                _PLAN_STATUS_BY_TASK_STATE[record.state],
+            )
             results = self._repository.get_step_results(task_id)
             return TaskReport(
                 task_id=record.id,
@@ -266,6 +336,7 @@ class TaskService:
             # Mark running
             record.transition(TaskState.RUNNING)
             self._repository.update_task(record)
+            self._sync_plan_status(plan, task_id, PlanStatus.RUNNING)
             report = self._executor.execute(
                 plan,
                 record,
@@ -273,7 +344,15 @@ class TaskService:
                 total_timeout=self._config.task.total_timeout_seconds,
                 cancellation=token,
             )
+            self._sync_plan_status(
+                plan,
+                task_id,
+                _PLAN_STATUS_BY_TASK_STATE.get(report.state, PlanStatus.FAILED),
+            )
             return report
+        except Exception:
+            self._sync_plan_from_task(plan, task_id)
+            raise
         finally:
             if approved:
                 self._tools.approval = previous_approval
@@ -310,6 +389,10 @@ class TaskService:
             record.transition(TaskState.CANCELLED)
             record.error = "cancelled via API"
             self._repository.update_task(record)
+            assert self._planning_repo is not None
+            plan = self._planning_repo.get(record.plan_id)
+            if plan is not None:
+                self._sync_plan_status(plan, task_id, PlanStatus.CANCELLED)
         except Exception:
             pass
         return {"task_id": task_id, "cancelling": True, "state": record.state.value}

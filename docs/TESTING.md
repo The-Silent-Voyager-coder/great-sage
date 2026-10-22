@@ -286,7 +286,9 @@ Coverage:
   `AIRequestCompleted`/`AIStreamCompleted` carry metadata, never text;
   cancellation during the final model generation ends `cancelled` (not
   `completed`), and `AGENT_COMPLETED` carries `content_length` instead of
-  model text.
+  model text; plan status mirrors task execution (`RUNNING → COMPLETED |
+  FAILED | CANCELLED`) with `metadata.task_id`, including failed-task
+  resume back to `COMPLETED`.
 - The control-plane suite runs a real loopback HTTP server in a thread with a
   fake runtime; no external network, no model calls, no real tool execution.
   Request bodies are drained before auth responses to avoid Windows RST
