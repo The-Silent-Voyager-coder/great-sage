@@ -8,6 +8,7 @@ capability gating. No real Ollama, no internet.
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 
@@ -359,6 +360,172 @@ def test_generate_parses_string_tool_arguments(fake_server) -> None:
     )
     assert response.tool_calls is not None
     assert response.tool_calls[0].arguments == {"path": "."}
+
+
+LIST_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string"},
+        "recursive": {"type": "boolean"},
+    },
+    "required": ["path"],
+}
+
+
+def _list_request() -> AIRequest:
+    return AIRequest(
+        messages=[Message.user("list")],
+        tools=[
+            ToolDefinition(
+                name="filesystem.list",
+                description="list",
+                input_schema=LIST_SCHEMA,
+            )
+        ],
+    )
+
+
+def test_generate_flattens_schema_shaped_tool_arguments(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    chat = {
+        "model": "llama3:latest",
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "filesystem.list",
+                        "arguments": {
+                            "type": "object",
+                            "required": ["path"],
+                            "properties": {"path": "."},
+                            "recursive": "false",
+                        },
+                    }
+                }
+            ],
+        },
+        "done": True,
+    }
+    fake_server.route("POST", "/api/chat", 200, chat)
+    response = provider.generate(_list_request())
+    assert response.tool_calls is not None
+    assert response.tool_calls[0].arguments == {"path": ".", "recursive": False}
+
+
+def test_generate_unwraps_parameters_tool_arguments(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    chat = {
+        "model": "llama3:latest",
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "filesystem.list",
+                        "arguments": {
+                            "type": "function",
+                            "function": "filesystem.list",
+                            "parameters": {"path": ".", "recursive": "true"},
+                        },
+                    }
+                }
+            ],
+        },
+        "done": True,
+    }
+    fake_server.route("POST", "/api/chat", 200, chat)
+    response = provider.generate(_list_request())
+    assert response.tool_calls is not None
+    assert response.tool_calls[0].arguments == {"path": ".", "recursive": True}
+
+
+def test_generate_leaves_valid_flat_tool_arguments_unchanged(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    chat = {
+        "model": "llama3:latest",
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "filesystem.list",
+                        "arguments": {"path": ".", "recursive": False},
+                    }
+                }
+            ],
+        },
+        "done": True,
+    }
+    fake_server.route("POST", "/api/chat", 200, chat)
+    response = provider.generate(_list_request())
+    assert response.tool_calls is not None
+    assert response.tool_calls[0].arguments == {"path": ".", "recursive": False}
+
+
+def test_generate_keeps_string_values_for_string_schema_fields(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    chat = {
+        "model": "llama3:latest",
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "filesystem.write",
+                        "arguments": {"path": ".", "content": "false"},
+                    }
+                }
+            ],
+        },
+        "done": True,
+    }
+    fake_server.route("POST", "/api/chat", 200, chat)
+    request = AIRequest(
+        messages=[Message.user("write")],
+        tools=[
+            ToolDefinition(
+                name="filesystem.write",
+                description="write",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["path", "content"],
+                },
+            )
+        ],
+    )
+    response = provider.generate(request)
+    assert response.tool_calls is not None
+    assert response.tool_calls[0].arguments == {"path": ".", "content": "false"}
+
+
+def test_stream_normalizes_schema_shaped_tool_arguments(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    stream_body = (
+        '{"model":"llama3:latest","message":{"role":"assistant","content":"",'
+        '"tool_calls":[{"function":{"name":"filesystem.list","arguments":'
+        '{"type":"object","properties":{"path":"."},"required":["path"]}}}]},'
+        '"done":false}\n'
+        '{"model":"llama3:latest","message":{"role":"assistant","content":""},'
+        '"done":true,"done_reason":"stop"}\n'
+    )
+    fake_server.route("POST", "/api/chat", 200, stream_body)
+
+    async def collect():
+        return [chunk async for chunk in provider.stream(_list_request())]
+
+    chunks = run(collect())
+    tool_chunks = [chunk for chunk in chunks if chunk.kind == "tool_call"]
+    assert len(tool_chunks) == 1
+    assert json.loads(tool_chunks[0].arguments or "{}") == {"path": "."}
 
 
 def test_chat_body_think_metadata_controls_field(fake_server) -> None:
