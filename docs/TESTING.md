@@ -267,14 +267,16 @@ Coverage:
 
 ## 6g. Trust/control baseline (October 2026)
 
-- **1,221 tests collected**; full suite green, `ruff` + `mypy` clean
-  (142 source files).
+- **1,239 tests collected**; full suite green, `ruff` + `mypy` clean
+  (143 source files).
 - New suites: `tests/unit/agent/test_agent_approval_broker.py` (pending-only
   decisions, redacted previews, timeout cleanup), `tests/unit/observability/
   test_audit.py` (append-only + redaction), `tests/unit/control/` (loopback
   server, token/Host gate, broker-backed approve/reject, one-run limit,
-  non-loopback refusal), `tests/integration/test_cli_serve.py` (serve
-  wiring/refusal), `tests/unit/telegram/test_telegram_screenshot.py`
+  non-loopback refusal, background process state/liveness/probe/stop
+  verification), `tests/integration/test_cli_serve.py` (foreground and
+  background serve wiring, status/stop, stale-state cleanup),
+  `tests/unit/telegram/test_telegram_screenshot.py`
   (scoped approval, ToolService delegation), and
   `tests/unit/tools/test_network_security.py` (public-only targets,
   redirect validation).

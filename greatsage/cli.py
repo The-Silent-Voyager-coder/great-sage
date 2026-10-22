@@ -54,6 +54,9 @@ Commands:
             (voice: mic -> transcribe -> generate -> speak -> repeat)
             (always-on: wake-word gated loop with barge-in)
             (text: type -> generate -> print -> repeat)
+    greatsage serve [--background|status|stop] [--config PATH]
+            loopback dashboard (foreground by default; status/stop manage a
+            detached background process)
 
 Exit codes: 0 success, 1 general failure, 2 invalid configuration/input.
 Memory content is never printed unless --content is passed.
@@ -72,6 +75,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import Any
 
 from greatsage import __version__
 from greatsage.agent.approval_broker import ApprovalBroker, PendingApproval
@@ -197,6 +201,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="local control plane (loopback dashboard + human approvals)",
     )
     serve_parser.add_argument(
+        "serve_command",
+        nargs="?",
+        choices=("status", "stop"),
+        default=None,
+        help="status or stop the background control plane",
+    )
+    serve_parser.add_argument(
         "--config", metavar="PATH", default=None, help="configuration file to use"
     )
     serve_parser.add_argument(
@@ -206,6 +217,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     serve_parser.add_argument(
         "--port", type=int, default=8765, help="local port (default: 8765)"
+    )
+    serve_parser.add_argument(
+        "--background",
+        action="store_true",
+        help="start a detached background server and return",
     )
 
     chat_parser = subparsers.add_parser("chat", help="conversation loop (voice or text)")
@@ -2365,10 +2381,102 @@ def _cmd_telegram_listen(args: argparse.Namespace) -> int:
 # --- control plane -------------------------------------------------------
 
 
+def _serve_runtime_dir(args: argparse.Namespace) -> Path:
+    loaded = load_config(args.config)
+    return Path(loaded.config.core.runtime_dir)
+
+
+def _format_serve_state(state: Any) -> None:
+    print("Great Sage Control Plane")
+    print(f"  status {state.get('status')}")
+    if state.get("state"):
+        data = state["state"]
+        print(f"  pid    {data.get('pid')}")
+        print(f"  url    {data.get('url')}")
+        print(f"  since  {data.get('started_at')}")
+        if data.get("log_path"):
+            print(f"  log    {data.get('log_path')}")
+    elif state.get("detail"):
+        print(f"  detail {state['detail']}")
+
+
+def _cmd_serve_status(args: argparse.Namespace) -> int:
+    from greatsage.control.process import status
+
+    try:
+        runtime_dir = _serve_runtime_dir(args)
+    except ConfigurationError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_INVALID
+    result = status(runtime_dir)
+    _format_serve_state(result)
+    return EXIT_OK if result["status"] == "running" else EXIT_FAILURE
+
+
+def _cmd_serve_stop(args: argparse.Namespace) -> int:
+    from greatsage.control.process import ServeProcessError, stop_background
+
+    try:
+        runtime_dir = _serve_runtime_dir(args)
+    except ConfigurationError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_INVALID
+    try:
+        state = stop_background(runtime_dir)
+    except ServeProcessError as exc:
+        print(f"greatsage serve stop: {exc}", file=sys.stderr)
+        return EXIT_FAILURE
+    print(f"Great Sage Control Plane stopped (pid {state.pid})")
+    return EXIT_OK
+
+
+def _cmd_serve_background(args: argparse.Namespace) -> int:
+    from greatsage.control.process import ServeProcessError, start_background
+
+    if args.port == 0:
+        print(
+            "greatsage serve: --background requires an explicit non-zero port",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID
+    try:
+        runtime_dir = _serve_runtime_dir(args)
+    except ConfigurationError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_INVALID
+    try:
+        state = start_background(
+            runtime_dir=runtime_dir,
+            host=args.host,
+            port=args.port,
+            config_path=args.config,
+            cwd=Path.cwd(),
+        )
+    except ServeProcessError as exc:
+        print(f"greatsage serve: {exc}", file=sys.stderr)
+        return EXIT_FAILURE
+    print("Great Sage Control Plane")
+    print(f"  status running in background (pid {state.pid})")
+    print(f"  url    {state.url}")
+    print(f"  log    {state.log_path}")
+    print("  stop   greatsage serve stop")
+    return EXIT_OK
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     from greatsage.control.server import ControlServer
     from greatsage.control.state import ControlValidationError
 
+    if args.serve_command == "status":
+        if args.background:
+            print("greatsage serve: --background cannot be used with status", file=sys.stderr)
+            return EXIT_INVALID
+        return _cmd_serve_status(args)
+    if args.serve_command == "stop":
+        if args.background:
+            print("greatsage serve: --background cannot be used with stop", file=sys.stderr)
+            return EXIT_INVALID
+        return _cmd_serve_stop(args)
     if args.host not in ("127.0.0.1", "localhost"):
         print(
             "greatsage serve: the control plane only binds to loopback "
@@ -2376,6 +2484,8 @@ def _cmd_serve(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return EXIT_INVALID
+    if args.background:
+        return _cmd_serve_background(args)
     try:
         runtime = _runtime_from_args(args)
     except ConfigurationError as exc:
