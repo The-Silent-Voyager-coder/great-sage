@@ -530,8 +530,9 @@ exposes `run(prompt, ...)`/`cancel()`/`health()`/`history()`, registers the
 `AGENT_*` events with exactly one terminal state per failure.
 
 Terminal runs are persisted to `core.data_dir/sage-agent-runs.db` as
-metadata only: task/session ids, state, step/tool counts, provider/model,
-timings, redacted error/reason, prompt length, and final-output length.
+metadata only: task/session ids, state, step/tool counts (including failed
+tool calls), provider/model, timings, redacted error/reason, prompt length,
+and final-output length.
 Prompts and model text are never written to the history database. History
 failure (corrupt/locked/unavailable DB) disables the history view but never
 the run.

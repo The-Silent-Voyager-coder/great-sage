@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -30,6 +31,7 @@ def _result(
         session_id="session_1",
         state=state,
         tool_calls=2,
+        failed_tool_calls=1,
         tool_output_bytes=42,
         duration_ms=12.5,
         final_text=final_text,
@@ -73,6 +75,7 @@ def test_record_list_get_roundtrip(tmp_path: Path) -> None:
     assert loaded["state"] == "completed"
     assert loaded["steps"] == 0
     assert loaded["tool_calls"] == 2
+    assert loaded["failed_tool_calls"] == 1
     assert loaded["content_length"] == len("done")
     assert loaded["prompt_length"] == 17
     assert loaded["provider"] == "local"
@@ -158,6 +161,54 @@ def test_corrupt_database_is_kept_and_reported(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == "not a sqlite database"
 
 
+def test_v1_database_migrates_failed_tool_calls_column(tmp_path: Path) -> None:
+    path = tmp_path / "agent-runs.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO schema_meta(key, value) VALUES ('schema_version', '1');
+        CREATE TABLE agent_runs (
+            task_id TEXT PRIMARY KEY,
+            session_id TEXT,
+            state TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'agent',
+            steps INTEGER NOT NULL,
+            tool_calls INTEGER NOT NULL,
+            tool_output_bytes INTEGER NOT NULL,
+            duration_ms REAL NOT NULL,
+            provider TEXT,
+            model TEXT,
+            error TEXT,
+            reason TEXT,
+            memory_references INTEGER NOT NULL,
+            content_length INTEGER NOT NULL,
+            prompt_length INTEGER NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT NOT NULL
+        );
+        INSERT INTO agent_runs
+        (task_id, session_id, state, source, steps, tool_calls,
+         tool_output_bytes, duration_ms, provider, model, error, reason,
+         memory_references, content_length, prompt_length, started_at, finished_at)
+        VALUES ('old_task', NULL, 'completed', 'cli', 1, 1, 0, 1.0,
+                'local', 'm', NULL, NULL, 0, 0, 1,
+                '2026-10-22T00:00:00+00:00', '2026-10-22T00:00:01+00:00');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    store = AgentRunStore(path)
+    store.initialize()
+
+    entry = store.list()[0]
+    assert entry["task_id"] == "old_task"
+    assert entry["failed_tool_calls"] == 0
+    assert store.health().schema_version == 2
+    store.close()
+
+
 def test_health_reports_schema_and_count(tmp_path: Path) -> None:
     store = _store(tmp_path)
     started, finished = _times()
@@ -172,7 +223,7 @@ def test_health_reports_schema_and_count(tmp_path: Path) -> None:
     health = store.health()
 
     assert health.available is True
-    assert health.schema_version == 1
+    assert health.schema_version == 2
     assert health.runs == 1
     assert health.database_path.endswith("agent-runs.db")
     store.close()

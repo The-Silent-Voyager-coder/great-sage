@@ -166,6 +166,7 @@ def test_agent_run_safe_loop(
     assert "Great Sage Agent Run" in out
     assert "state        completed" in out
     assert "tool_calls   1" in out
+    assert "failed_tools 0" in out
     assert "System checked via agent loop." in out
 
 
@@ -189,6 +190,7 @@ def test_agent_history_survives_restart(
     assert "completed" in captured.out
     assert "source=cli" in captured.out
     assert "task=" in captured.out
+    assert "failed_tools=0" in captured.out
     assert "system.info" not in captured.out
 
 
@@ -255,6 +257,7 @@ def test_agent_run_interactive_approves_write(
     assert "risk       medium" in captured.err
     assert "state        completed" in captured.out
     assert "tool_calls   1" in captured.out
+    assert "failed_tools 0" in captured.out
 
 
 def test_agent_run_interactive_denies_write(
@@ -281,6 +284,7 @@ def test_agent_run_interactive_denies_write(
     assert "denied" in captured.err
     assert "state        completed" in captured.out
     assert "tool_calls   1" in captured.out
+    assert "failed_tools 1" in captured.out
 
 
 def test_agent_run_json(

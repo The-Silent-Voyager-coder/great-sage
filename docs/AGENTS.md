@@ -165,9 +165,10 @@ greatsage agent history [--limit N] [--config PATH] [--json]
 ```
 
 Terminal runs are recorded in `core.data_dir/sage-agent-runs.db` as metadata
-only (state, counts, provider/model, timings, redacted error/reason, prompt and
-output lengths). Prompts and model output are never stored. History failure
-never fails a run; `agent health` reports the history store state.
+only (state, counts including failed tool calls, provider/model, timings,
+redacted error/reason, prompt and output lengths). Prompts and model output
+are never stored. History failure never fails a run; `agent health` reports
+the history store state.
 
 `--interactive` prompts on stdin for every `ASK`-level tool call. Without it,
 the bounded agent approval window expires and denies — approval is never

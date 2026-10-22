@@ -112,6 +112,7 @@ class AgentOrchestrator:
         steps: list[AgentStep] = []
         detector = LoopDetector(limits.loop_detection_threshold)
         total_tool_calls = 0
+        failed_tool_calls = 0
         total_output_bytes = 0
         final_text: str | None = None
         error: str | None = None
@@ -186,9 +187,12 @@ class AgentOrchestrator:
                         result = self._execute_call(task, call)
                         results.append(result)
                         total_tool_calls += 1
+                        if not result.success:
+                            failed_tool_calls += 1
                         total_output_bytes += _call_output_bytes(result)
                         messages.append(Message.tool(call.id, _render_result(result)))
                         status.tool_calls = total_tool_calls
+                        status.failed_tool_calls = failed_tool_calls
                         self._publish(
                             AGENT_TOOL_CALL_COMPLETED,
                             {
@@ -290,6 +294,7 @@ class AgentOrchestrator:
             state=state,
             steps=tuple(steps),
             tool_calls=total_tool_calls,
+            failed_tool_calls=failed_tool_calls,
             tool_output_bytes=total_output_bytes,
             duration_ms=status.elapsed_ms,
             final_text=final_text,

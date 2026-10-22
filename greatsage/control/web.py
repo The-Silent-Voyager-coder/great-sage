@@ -320,7 +320,8 @@ INDEX_HTML = """<!doctype html>
           text(
             "div",
             (run.source || "agent") + " | steps " + (run.steps || 0) +
-              " | tools " + (run.tool_calls || 0) + " | " +
+              " | tools " + (run.tool_calls || 0) + " | failed " +
+              (run.failed_tool_calls || 0) + " | " +
               Math.round(run.duration_ms || 0) + " ms",
             "muted"
           )
@@ -366,6 +367,7 @@ INDEX_HTML = """<!doctype html>
         text(
           "div",
           "steps " + (run.steps || 0) + " | tools " + (run.tool_calls || 0) +
+            " | failed " + (run.failed_tool_calls || 0) +
             " | " + Math.round(run.duration_ms || 0) + " ms",
           "muted"
         )
@@ -708,7 +710,8 @@ INDEX_HTML = """<!doctype html>
       const keys = kind === "task"
         ? ["task_id", "plan_id", "goal", "total_steps", "completed_steps",
            "failed_steps", "duration_ms", "summary"]
-        : ["task_id", "provider", "model", "tool_calls", "duration_ms"];
+        : ["task_id", "provider", "model", "tool_calls", "failed_tool_calls",
+           "duration_ms"];
       for (const key of keys) {
         if (result[key] === undefined || result[key] === null) continue;
         const row = text("div", null, "component");
@@ -764,7 +767,8 @@ INDEX_HTML = """<!doctype html>
           (run.plan_id || "-") + " | task " + (run.task_id || "-");
       } else if (run.active) {
         $("run-state").textContent = "running · " + (current.state || "starting") +
-          " · steps " + (current.steps || 0) + " · tools " + (current.tool_calls || 0);
+          " · steps " + (current.steps || 0) + " · tools " + (current.tool_calls || 0) +
+          " · failed " + (current.failed_tool_calls || 0);
       } else if (run.result) {
         $("run-state").textContent = "finished · " + (run.result.state || "unknown");
       } else if (run.error) {

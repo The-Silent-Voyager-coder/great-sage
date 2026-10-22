@@ -110,6 +110,7 @@ def test_agent_result_to_dict_shape() -> None:
         session_id=None,
         state=AgentState.COMPLETED,
         tool_calls=1,
+        failed_tool_calls=1,
         tool_output_bytes=42,
         duration_ms=1.5,
         final_text="done",
@@ -121,12 +122,13 @@ def test_agent_result_to_dict_shape() -> None:
     assert data["state"] == "completed"
     assert data["steps"] == 0
     assert data["tool_calls"] == 1
+    assert data["failed_tool_calls"] == 1
     assert data["duration_ms"] == 1.5
     assert data["memory_references"] == 0
     assert set(data) == {
         "task_id", "session_id", "state", "steps", "tool_calls",
-        "tool_output_bytes", "duration_ms", "final_text", "provider",
-        "model", "error", "reason", "memory_references",
+        "failed_tool_calls", "tool_output_bytes", "duration_ms", "final_text",
+        "provider", "model", "error", "reason", "memory_references",
     }
 
 

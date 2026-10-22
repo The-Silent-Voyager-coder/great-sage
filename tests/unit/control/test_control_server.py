@@ -34,6 +34,7 @@ class _FakeResult:
             "provider": "fake",
             "model": "fake-model",
             "tool_calls": 1,
+            "failed_tool_calls": 0 if self._state == "completed" else 1,
             "duration_ms": 1.0,
             "final_text": "finished" if self._state == "completed" else None,
             "error": None if self._state == "completed" else "approval denied",
@@ -52,6 +53,7 @@ class _FakeAgent:
                 "source": "control",
                 "steps": 2,
                 "tool_calls": 1,
+                "failed_tool_calls": 1,
                 "duration_ms": 12.0,
                 "provider": "fake",
                 "model": "fake-model",
@@ -394,6 +396,7 @@ def test_agent_run_history_views(control_server: Any) -> None:
     runs = json.loads(body)["runs"]
     assert runs[0]["task_id"] == "task_control_0"
     assert runs[0]["source"] == "control"
+    assert runs[0]["failed_tool_calls"] == 1
     assert "final_text" not in runs[0]
 
     status, body = _request(server, "GET", "/api/runs/task_control_0")

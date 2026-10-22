@@ -181,6 +181,7 @@ def agent_run_summary(run: dict[str, Any]) -> dict[str, Any]:
         "source": str(run.get("source", "agent")),
         "steps": run.get("steps", 0),
         "tool_calls": run.get("tool_calls", 0),
+        "failed_tool_calls": run.get("failed_tool_calls", 0),
         "duration_ms": run.get("duration_ms", 0.0),
         "provider": _optional_text(run.get("provider"), 120),
         "model": _optional_text(run.get("model"), 200),

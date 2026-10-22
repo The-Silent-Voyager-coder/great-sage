@@ -575,6 +575,7 @@ class AgentResult:
     state: AgentState
     steps: int
     tool_calls: int
+    failed_tool_calls: int
     elapsed_ms: float
     provider: str | None
     model: str | None
@@ -658,7 +659,8 @@ unavailable); `2` invalid prompt/configuration.
 
 `AgentService` records every terminal result in
 `core.data_dir/sage-agent-runs.db` (metadata only: state, step/tool counts,
-provider/model, timings, redacted error/reason, prompt length, output length).
+failed tool-call count, provider/model, timings, redacted error/reason, prompt
+length, output length).
 Prompts and model output are never persisted. `agent history` and the control
 plane's recent-runs view read this store newest-first; `--json` emits the
 stored metadata.

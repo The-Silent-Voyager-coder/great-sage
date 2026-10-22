@@ -78,6 +78,7 @@ def test_agent_run_view_omits_prompts_and_model_text_and_redacts_errors() -> Non
         "source": "control",
         "steps": 2,
         "tool_calls": 1,
+        "failed_tool_calls": 1,
         "duration_ms": 12.0,
         "provider": "local",
         "model": "llama3.2:1b",
@@ -98,6 +99,7 @@ def test_agent_run_view_omits_prompts_and_model_text_and_redacts_errors() -> Non
 
     assert summary["task_id"] == "task_1"
     assert summary["source"] == "control"
+    assert summary["failed_tool_calls"] == 1
     assert summary["content_length"] == 100
     assert "final_text" not in summary
     assert "prompt" not in summary
