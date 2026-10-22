@@ -1,10 +1,12 @@
 """Structured JSON logging with correlation IDs and secret redaction.
 
-All Great Sage logs are machine-readable JSON on stdout and to
-`<logs_dir>/sage.log` (rotating). Correlation IDs (session/task/event) are
-carried in context variables so logs produced inside a task are correlated
-automatically. Secret-shaped values are masked before serialization as a
-defense in depth — logging code must still never log credentials.
+The rotating `<logs_dir>/sage.log` is always machine-readable JSON.
+The console handler is human-readable and, by default, only shows warnings
+and errors on stderr so normal CLI output stays clean. Correlation IDs
+(session/task/event) are carried in context variables so logs produced inside
+a task are correlated automatically. Secret-shaped values are masked before
+serialization as a defense in depth — logging code must still never log
+credentials.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ import contextvars
 import json
 import logging
 import re
+import sys
 import traceback
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -159,6 +162,20 @@ class JsonFormatter(logging.Formatter):
         return name
 
 
+class ConsoleFormatter(logging.Formatter):
+    """Human-readable single-line console output for warnings and errors."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        timestamp = datetime.fromtimestamp(
+            record.created, tz=UTC
+        ).strftime("%Y-%m-%d %H:%M:%S")
+        message = str(_sanitize(record.getMessage()))
+        line = f"{timestamp} {record.levelname:<8} {record.name}: {message}"
+        if record.exc_info and record.exc_info[0] is not None:
+            line += "\n" + self.formatException(record.exc_info)
+        return line
+
+
 # --- setup -------------------------------------------------------------
 
 
@@ -167,8 +184,9 @@ def setup_logging(
     logs_dir: Path | None = None,
     *,
     console: bool = True,
+    console_level: int = logging.WARNING,
 ) -> None:
-    """Configure the `greatsage` logger: JSON console + rotating JSON file."""
+    """Configure human-readable console warnings plus a rotating JSON file."""
     logger = logging.getLogger("greatsage")
     logger.setLevel(LOG_LEVELS.get(cfg.level, logging.INFO))
     logger.propagate = False
@@ -177,8 +195,9 @@ def setup_logging(
         handler.close()
 
     if console:
-        stream = logging.StreamHandler()
-        stream.setFormatter(JsonFormatter())
+        stream = logging.StreamHandler(stream=sys.stderr)
+        stream.setLevel(console_level)
+        stream.setFormatter(ConsoleFormatter())
         logger.addHandler(stream)
 
     if logs_dir is not None:

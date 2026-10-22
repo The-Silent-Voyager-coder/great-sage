@@ -73,7 +73,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import logging
 import sys
 import threading
 import uuid
@@ -3176,13 +3175,6 @@ def _cmd_chat(args: argparse.Namespace) -> int:
     except SageError as exc:
         print(f"greatsage chat: runtime startup failed: {exc}", file=sys.stderr)
         return EXIT_FAILURE
-
-    # Suppress startup logs AFTER runtime.init (setup_logging reconfigures root)
-    # Clear all handlers so JSON stops printing to stdout
-    _logger = logging.getLogger("greatsage")
-    _logger.handlers.clear()
-    _logger.setLevel(logging.WARNING)
-    _logger.propagate = False
 
     voice: VoiceService | None = None
     if not text_mode:

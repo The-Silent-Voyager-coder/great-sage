@@ -63,9 +63,13 @@ def test_config_validate_missing_file(tmp_path: Path, capsys: pytest.CaptureFixt
 
 def test_health_command(valid_config_yaml: Path, capsys: pytest.CaptureFixture[str]) -> None:
     code = main(["health", "--config", str(valid_config_yaml)])
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
+    out = captured.out
     assert "Great Sage Health" in out
     assert "Core" in out and "HEALTHY" in out
+    # Routine lifecycle logs stay off the console; file logs remain JSON.
+    assert "runtime started" not in captured.err
+    assert '"logger": "greatsage.core.runtime"' not in captured.err
     assert "Configuration" in out
     assert "Event Bus" in out
     assert "Service Registry" in out

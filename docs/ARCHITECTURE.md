@@ -702,9 +702,12 @@ from logs + task history.
 
 `greatsage/observability/logging.py`:
 
-- `setup_logging(cfg, logs_dir, console=True)` configures the `greatsage`
-  logger: one JSON record per line to stdout and a rotating
-  `<logs_dir>/greatsage.log` (10 MB, `backupCount = retention_days`).
+- `setup_logging(cfg, logs_dir, console=True, console_level=WARNING)`
+  configures the `greatsage` logger: compact human-readable warnings/errors
+  on stderr and a rotating JSON `<logs_dir>/sage.log` (10 MB,
+  `backupCount = retention_days`). Routine INFO startup logs stay in the
+  file, so normal CLI stdout/stderr remains clean; pass
+  `console_level=logging.INFO` only for explicit diagnostics.
 - Records carry `timestamp, level, logger, message, component, event_id,
   session_id, task_id` plus any extra context; correlation IDs are bound via
   `correlation()` context manager (context variables), so logs inside a
