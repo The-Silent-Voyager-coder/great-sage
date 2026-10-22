@@ -46,7 +46,7 @@ LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 PROVIDER_NAMES = frozenset({"local", "opencode"})
 
 Kind = Literal[
-    "str", "nonempty_str", "path", "path_list", "positive_int", "nonneg_int",
+    "str", "nonempty_str", "path", "path_list", "int", "positive_int", "nonneg_int",
     "positive_number", "bool", "enum", "url", "mapping", "confidence", "int_list",
 ]
 
@@ -58,6 +58,7 @@ def _describe(kind: Kind) -> str:
         "path": "absolute filesystem path",
         "path_list": "list of absolute filesystem paths",
         "int_list": "list of integers",
+        "int": "integer",
         "positive_int": "integer greater than zero",
         "nonneg_int": "integer greater than or equal to zero",
         "positive_number": "number greater than zero",
@@ -246,6 +247,7 @@ PROVIDER_FIELDS: dict[str, dict[str, Field]] = {
         "base_url": Field("url", _describe("url")),
         "model": Field("str", _describe("str")),
         "timeout_seconds": Field("positive_number", _describe("positive_number")),
+        "num_gpu": Field("int", "integer (-1 = Ollama default, 0 = CPU-only)"),
     },
     "opencode": {
         "type": Field("enum", "provider type in ['opencode']", frozenset({"opencode"})),
@@ -260,7 +262,7 @@ PROVIDER_FIELDS: dict[str, dict[str, Field]] = {
 
 _SCALAR_KINDS: frozenset[Kind] = frozenset(
     {
-        "str", "nonempty_str", "path", "positive_int", "nonneg_int",
+        "str", "nonempty_str", "path", "int", "positive_int", "nonneg_int",
         "positive_number", "bool", "enum", "url", "confidence", "int_list",
     }
 )
@@ -605,6 +607,8 @@ def _matches(kind: Kind, value: Any) -> bool:
         return isinstance(value, str)
     if kind == "bool":
         return isinstance(value, bool)
+    if kind == "int":
+        return isinstance(value, int) and not isinstance(value, bool)
     if kind in ("positive_int", "nonneg_int"):
         if isinstance(value, bool) or not isinstance(value, int):
             return False
@@ -657,7 +661,7 @@ def coerce_env(kind: Kind, raw: str) -> Any:
         if lowered in ("false", "0", "no", "off"):
             return False
         raise ValueError(f"expected boolean, got {raw!r}")
-    if kind in ("positive_int", "nonneg_int"):
+    if kind in ("int", "positive_int", "nonneg_int"):
         try:
             return int(raw)
         except ValueError as exc:
@@ -785,6 +789,7 @@ def build_config(raw: dict[str, Any]) -> SageConfig:
             base_url=str(local_data["base_url"]),
             model=str(local_data["model"]),
             timeout_seconds=float(local_data["timeout_seconds"]),
+            num_gpu=int(local_data["num_gpu"]),
         ),
         opencode=OpenCodeProviderConfig(
             type=str(opencode_data["type"]),

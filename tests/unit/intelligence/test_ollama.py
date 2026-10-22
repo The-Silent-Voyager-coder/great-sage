@@ -526,6 +526,20 @@ def test_stream_normalizes_schema_shaped_tool_arguments(fake_server) -> None:
     tool_chunks = [chunk for chunk in chunks if chunk.kind == "tool_call"]
     assert len(tool_chunks) == 1
     assert json.loads(tool_chunks[0].arguments or "{}") == {"path": "."}
+def test_chat_body_num_gpu_cpu_only(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    body = provider._chat_body(AIRequest(messages=[Message.user("hi")]))
+    assert "options" not in body
+
+    cpu_only = OllamaProvider(
+        base_url=fake_server.url,
+        model="llama3:latest",
+        num_gpu=0,
+    )
+    body = cpu_only._chat_body(
+        AIRequest(messages=[Message.user("hi")], temperature=0.2)
+    )
+    assert body["options"] == {"temperature": 0.2, "num_gpu": 0}
 
 
 def test_chat_body_think_metadata_controls_field(fake_server) -> None:

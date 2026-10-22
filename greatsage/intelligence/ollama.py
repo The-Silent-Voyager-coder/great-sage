@@ -209,12 +209,14 @@ class OllamaProvider(AIProvider):
         base_url: str = OLLAMA_DEFAULT_URL,
         model: str = "",
         timeout_seconds: float = 60.0,
+        num_gpu: int = -1,
         provider_id: str = "local",
     ) -> None:
         super().__init__(provider_id)
         self._base_url = base_url if base_url else OLLAMA_DEFAULT_URL
         self._configured_model = model
         self._timeout = timeout_seconds if timeout_seconds > 0 else 60.0
+        self._num_gpu = num_gpu
         self._models: tuple[str, ...] = ()
         self._tool_capable = False
 
@@ -482,8 +484,13 @@ class OllamaProvider(AIProvider):
         think = request.metadata.get("think")
         if isinstance(think, bool):
             body["think"] = think
+        options: dict[str, Any] = {}
         if request.temperature is not None:
-            body["options"] = {"temperature": request.temperature}
+            options["temperature"] = request.temperature
+        if self._num_gpu >= 0:
+            options["num_gpu"] = self._num_gpu
+        if options:
+            body["options"] = options
         if request.tools:
             body["tools"] = [
                 {

@@ -113,6 +113,7 @@ ai:
       base_url: http://127.0.0.1:11434
       model: ""                                # provider decides (Ollama tags)
       timeout_seconds: 120
+      num_gpu: -1                              # -1 = Ollama default, 0 = CPU-only
     opencode:
       type: opencode
       enabled: false                           # off by default
@@ -128,6 +129,11 @@ Semantics:
 - `providers.<name>.type` is an enum: `local` (Ollama adapter) or `opencode`
   (remote). Unknown or disabled types are not registered.
 - `base_url` must be a valid http(s) URL (validated with port range).
+- `num_gpu` is passed to Ollama as `options.num_gpu`: `-1` leaves the Ollama
+  default unchanged, `0` forces CPU-only (useful for models that fail local
+  CUDA initialization), and a positive value limits GPU layers. It is only
+  sent when the value is `>= 0`. Override with
+  `GREATSAGE_AI__PROVIDERS__LOCAL__NUM_GPU`.
 - `api_key_env` names an environment variable holding the OpenCode server
   password; `username_env` optionally names one holding the server username
   (default `opencode`). Values are read once at start and used for HTTP

@@ -78,6 +78,7 @@ class LocalProviderConfig:
     base_url: str
     model: str
     timeout_seconds: float
+    num_gpu: int = -1  # Ollama default; 0 = CPU-only
 
 
 @dataclass(frozen=True)
