@@ -154,6 +154,11 @@ class AgentOrchestrator:
                 response = self._generate(
                     task, context, messages, definitions, status
                 )
+                # The provider call itself is not interruptible (Ollama has no
+                # server-side handle); re-check after it returns so a cancel or
+                # wall-clock expiry during generation cannot still complete.
+                self._check_wall_clock(limits, started)
+                token.raise_if_cancelled()
                 if response.tool_calls:
                     calls = self._guard_calls(
                         response.tool_calls, limits, total_tool_calls, detector, task
@@ -465,7 +470,12 @@ class AgentOrchestrator:
             "duration_ms": status.elapsed_ms,
         }
         if state is AgentState.COMPLETED:
-            self._publish(AGENT_COMPLETED, {**common, "final_text": (final_text or "")[:200]})
+            # Model output stays in the AgentResult/control state; the event
+            # and audit log carry metadata only.
+            self._publish(
+                AGENT_COMPLETED,
+                {**common, "content_length": len(final_text or "")},
+            )
         elif state is AgentState.FAILED:
             self._publish(AGENT_FAILED, {**common, "error": (error or "")[:200]})
         elif state is AgentState.CANCELLED:

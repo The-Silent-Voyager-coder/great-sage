@@ -35,7 +35,7 @@ human control surface around it:
 - Local control plane: `greatsage serve` exposes a loopback-only dashboard
   for pending approvals, bounded agent runs, and explicit approved READY
   plan/task runs through the same pipeline.
-- Full suite: **1,219 tests collected**, passing; `ruff` and `mypy` clean.
+- Full suite: **1,221 tests collected**, passing; `ruff` and `mypy` clean.
 
 ## Phase 4 — Tool System
 
