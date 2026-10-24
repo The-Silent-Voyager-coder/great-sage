@@ -396,6 +396,10 @@ class ChatSession:
         request = AIRequest(
             request_id=f"chat_{uuid.uuid4().hex[:8]}",
             messages=list(self._history),
+            # Normal conversation is tool-free by contract. Tool use belongs
+            # to the bounded agent (`greatsage agent run`) or an MCP client,
+            # never to the chat loop.
+            tools=None,
             metadata=meta,
         )
         try:

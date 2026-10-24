@@ -268,3 +268,21 @@ as Phase 5B (`greatsage/delegation/`). Network tools (`network.fetch`,
 roadmap additions (§7b); the `browser` category remains reserved. Deleting
 files and killing processes are intentionally impossible through the tool
 system.
+
+## 13. MCP Transport (post-Phase 10)
+
+`greatsage mcp serve --stdio` exposes only `mcp.allowed_tools` to an MCP
+client. It is a transport adapter, not a parallel pipeline:
+
+- `tools/list` reads the registry declarations for allowlisted tools.
+- `tools/call` builds a normal `ToolRequest` (`source="mcp"`) and calls
+  `ToolService.execute`; the same registry validation, policy, path checks,
+  approval gate, execution bounds, and `TOOL_*` events apply.
+- The stdio server has no approval provider, so `ASK` is denied.
+- The default allowlist is read-only: list/stat/read files, list/info
+  processes, system info. `shell.execute`, write tools, and `gui.*` are not
+  exposed by default.
+- MCP tool names are namespaced (`greatsage_system_info`); unlisted names are
+  rejected without touching the registry.
+- `greatsage chat` is intentionally excluded: it never receives tool
+  definitions (`tools=None`), even when MCP is enabled.

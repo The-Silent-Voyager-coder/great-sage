@@ -158,7 +158,14 @@ class OpenCodeProvider(AIProvider):
         if request.tools:
             self._require_capability(Capability.TOOL_CALLING)
         started = datetime.now(UTC)
-        session_id = self._create_session(model=request.model or self._default_model or None)
+        # Normal conversation is tool-free by contract. OpenCode runs its own
+        # agent tools regardless of the prompt, so a chat request gets a
+        # session-level deny-all permission ruleset (no tool can execute).
+        tool_free = request.metadata.get("source") == "chat"
+        session_id = self._create_session(
+            model=request.model or self._default_model or None,
+            tool_free=tool_free,
+        )
         try:
             self._send_prompt(session_id, self._prompt_text(request))
             assistant = self._await_assistant(
@@ -478,11 +485,21 @@ class OpenCodeProvider(AIProvider):
                 exc,
             )
 
-    def _create_session(self, model: str | None = None) -> str:
+    def _create_session(
+        self, model: str | None = None, *, tool_free: bool = False
+    ) -> str:
         body: dict[str, Any] = {}
         ref = self._split_model(model or self._default_model or None)
         if ref is not None:
             body["model"] = ref
+        if tool_free:
+            # Deny every tool action at the OpenCode session boundary. This
+            # covers OpenCode's native tools and MCP tools alike; it is not a
+            # prompt hint, and the Great Sage MCP server remains unreachable
+            # for a normal chat session.
+            body["permissions"] = [
+                {"action": "*", "resource": "*", "effect": "deny"}
+            ]
         try:
             data = transport.request_json(
                 f"{self._api_root()}/session",

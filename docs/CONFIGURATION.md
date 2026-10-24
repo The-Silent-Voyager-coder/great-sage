@@ -39,6 +39,7 @@ Top-level sections:
 | `workspace.*` / `planning.*` | discovery scanner / deterministic planner limits + database paths |
 | `scheduler.*` | enable flag, max schedules ceiling-guarded, database path |
 | `telegram.*` | enable flag, token env name, allowlisted chat ids, poll/listen bounds |
+| `mcp.*` | local stdio MCP enable flag + explicit tool allowlist (read-only default) |
 | `agent.*` | bounded agent loop limits (steps, tool calls, wall clock, output bytes, loop threshold) |
 | `delegation.*` | executor delegation limits (wall clock, output bytes, permissions, sessions, depth) + default provider |
 | `tools.*` | working directory, execution timeout, output cap, allowed/denied roots, per-category default risk |
@@ -372,3 +373,38 @@ Background mode uses `core.runtime_dir` for two ephemeral files:
 `greatsage-serve.log` (child stdout/stderr). `greatsage serve status|stop`
 read the state file; stop only terminates after the loopback dashboard
 answers. See `docs/INTERFACES.md` §13 and `docs/SECURITY_MODEL.md` §13.
+
+## 15. MCP Section (post-Phase 10)
+
+```yaml
+mcp:
+  enabled: true
+  allowed_tools:
+    - "filesystem.list"
+    - "filesystem.stat"
+    - "filesystem.read"
+    - "process.list"
+    - "process.info"
+    - "system.info"
+```
+
+Rules:
+
+- `enabled` gates `greatsage mcp tools` and `greatsage mcp serve`.
+- `allowed_tools` is the complete MCP exposure list, in Great Sage tool-id
+  form (dots, not MCP names). Only registered tools in this list are
+  advertised; unknown entries are logged and skipped.
+- The default list is read-only. Adding `filesystem.write`, `shell.execute`,
+  `gui.*`, or similar does not grant automatic execution: each call still
+  enters `ToolService.execute`, and the stdio server has no approval provider,
+  so `ASK`-level calls fail closed.
+- Every call is audited as `source="mcp"` with a per-server session id.
+- Normal `greatsage chat` never receives these tools: it sends `tools=None`
+  and is conversation-only.
+- Environment overrides: `GREATSAGE_MCP__ENABLED` and
+  `GREATSAGE_MCP__ALLOWED_TOOLS` (comma-separated tool ids).
+- No `mcp` network listener exists. The transport is local stdio; loopback
+  HTTP MCP is intentionally not implemented.
+
+CLI: `greatsage mcp tools [--config PATH] [--json]`,
+`greatsage mcp serve --stdio [--config PATH]`.

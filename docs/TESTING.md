@@ -316,3 +316,25 @@ Coverage:
   False` with the existing RLock), which the HTTP/worker split requires.
 - `tests/integration/test_cli_workspace_task.py` covers `task resume
   --approve` retrying a medium-risk step under `security.mode: normal`.
+
+## 6h. MCP transport baseline (post-Phase 10)
+
+- **1,303 tests collected** (1,302 passed, 1 skipped); `ruff` + `mypy` clean.
+- New suites: `tests/unit/mcp/test_mcp_protocol.py` (JSON-RPC initialize,
+  notifications, tools/list allowlist + namespacing, tools/call delegation,
+  denied/unknown tool behavior, stdio parse errors) and
+  `tests/integration/test_cli_mcp.py` (`mcp tools` text/JSON, disabled config,
+  `serve` transport requirement).
+- Real-pipeline tests start a normal `ToolService`: `system.info` is served
+  through `McpToolServer`, and a medium-risk `filesystem.write` call is denied
+  because the stdio server has no approval provider (fail-closed, file not
+  created).
+- `tests/unit/chat/test_chat.py` asserts normal chat sends `tools=None`; chat
+  is conversation-only and never consults the MCP server.
+- `tests/unit/intelligence/test_opencode.py` asserts that a chat request
+  routed through OpenCode creates the session with a deny-all permission
+  ruleset, while non-chat generation keeps normal session permissions.
+- Config tests cover the `mcp:` section, string-list validation, and
+  `GREATSAGE_MCP__ALLOWED_TOOLS` coercion. Live OpenCode probing confirmed
+  server-side tool execution and the absence of a client-side tool-result API;
+  the MCP transport is the supported bridge.

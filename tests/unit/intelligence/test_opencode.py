@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 
 import pytest
 
@@ -138,6 +139,52 @@ def test_generate_system_prompt_folded_into_text(
     )
     prompt_request = next(r for r in fake_server.requests if r["path"].endswith("/prompt"))
     assert "system: you are a code assistant" in prompt_request["body"]
+
+
+def test_chat_generate_denies_all_tools_at_session_boundary(
+    opencode: OpenCodeProvider, fake_server
+) -> None:
+    _routes_for_generate(fake_server)
+    opencode.init()
+    opencode.generate(
+        AIRequest(
+            messages=[Message.user("hello")],
+            metadata={"source": "chat"},
+        )
+    )
+    create_request = next(
+        r for r in fake_server.requests if r["path"] == "/api/session"
+    )
+    body = json.loads(create_request["body"])
+    assert body["permissions"] == [
+        {"action": "*", "resource": "*", "effect": "deny"}
+    ]
+
+
+def test_non_chat_generate_keeps_normal_session_permissions(
+    opencode: OpenCodeProvider, fake_server
+) -> None:
+    _routes_for_generate(fake_server)
+    opencode.init()
+    opencode.generate(AIRequest(messages=[Message.user("do work")]))
+    create_request = next(
+        r for r in fake_server.requests if r["path"] == "/api/session"
+    )
+    body = json.loads(create_request["body"])
+    assert "permissions" not in body
+
+
+def test_generate_model_ref_in_session_create(
+    opencode: OpenCodeProvider, fake_server
+) -> None:
+    _routes_for_generate(fake_server)
+    opencode.init()
+    opencode.generate(
+        AIRequest(
+            messages=[Message.user("hi")],
+            model="opencode/muse-spark-1.3-contributor-free#xhigh",
+        )
+    )
     create_request = next(
         r for r in fake_server.requests if r["path"].endswith("/api/session")
     )

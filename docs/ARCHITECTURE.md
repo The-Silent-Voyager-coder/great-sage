@@ -104,6 +104,7 @@ verifies results before claiming success.
 | `interface/` | Local-first HUD status/dashboard (read-only; no `hud/` module) | 10 |
 | `control/` | Loopback HTTP control plane: token-gated dashboard, pending approvals, bounded agent runs, explicit approved plan/task runs (presentation only) | 10 + trust |
 | `integration/` | Reserved (empty — OpenCode wire lives in `intelligence/opencode.py` + `delegation/`) | 5 (via 5B) |
+| `mcp/` | Local stdio MCP transport exposing a configured tool allowlist to OpenCode/other clients through `ToolService` (no bypass) | post-10 |
 | `storage/` | Local filesystem layout, archive policy (Google Drive = external archive only) | 1 |
 | `tests/` | Unit suites per module + CLI integration tests (in-process fake servers; no network) | all |
 
@@ -113,6 +114,7 @@ verifies results before claiming success.
 `core` → `intelligence`, `memory`, `tools` (subsystems)
 `core` → `vision`, `voice`, `scheduler`, `telegram`, `workspace`, `planning`, `task` (subsystems)
 `control` → `agent`, `planning`, `task`, `interface` (presentation/control only; never calls a tool directly)
+`mcp` → `tools` (transport only; never executes a tool directly)
 `intelligence/opencode.py` (the OpenCode wire) depends on provider interfaces, never the reverse.
 
 Rules:
@@ -122,6 +124,9 @@ Rules:
 - `voice` and `vision` are service-layer leaves; their toolsets register
   into `tools` and are consumed through the standard pipeline.
 - `interface` reads only: it never executes, mutates, or starts services.
+- `mcp` is a transport adapter: it maps MCP `tools/list` / `tools/call` to
+  the registry and `ToolService.execute`; it holds no authority and no
+  alternate execution path.
 
 ## 5. Core Runtime
 
@@ -589,6 +594,31 @@ their own CLIs (`greatsage voice|vision|hud …`); vision currently has no
 `vision.*` config section (config-independent service — see integration
 notes). Phase 9 (security hardening) is done: secret redaction, path/command
 policy tightening, audit safety.
+
+## 5.6 Local MCP Transport (post-Phase 10)
+
+`greatsage/mcp/` exposes a small, configured subset of Great Sage tools to
+MCP clients (primarily OpenCode) over stdio. It is a transport, not a new
+authority:
+
+```text
+OpenCode → tools/list  → configured ToolRegistry subset
+OpenCode → tools/call  → ToolService.execute
+                         → policy / path checks / approval / audit
+```
+
+- The default allowlist is read-only: `filesystem.list`, `filesystem.stat`,
+  `filesystem.read`, `process.list`, `process.info`, `system.info`.
+  `mcp.allowed_tools` is the complete exposure list; tools not listed are
+  never advertised or callable.
+- MCP names are namespaced (`greatsage_filesystem_read`); the server resolves
+  them through its own catalog, never through a client-provided string.
+- `ASK` fails closed: the stdio server installs no approval provider. A
+  configured write/shell/gui tool is still denied unless the policy allows it.
+- `critical` tools remain denied; there is no direct execution path.
+- The server is started explicitly (`greatsage mcp serve --stdio`); the normal
+  `greatsage chat` loop stays tool-free and never receives tool definitions.
+- The server writes JSON-RPC only to stdout; logs go to stderr/file logging.
 
 ## 6. Event System
 

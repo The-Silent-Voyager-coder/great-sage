@@ -166,6 +166,21 @@ telegram:
   poll_timeout_seconds: 20
   max_listen_seconds: 600
 
+mcp:
+  # Local stdio MCP server for OpenCode and other MCP clients:
+  #   greatsage mcp serve --stdio
+  # Default surface is read-only. Every call still goes through the normal
+  # ToolService policy/approval/audit pipeline. Do not add shell/write/gui
+  # tools here unless you explicitly intend to expose them.
+  enabled: true
+  allowed_tools:
+    - "filesystem.list"
+    - "filesystem.stat"
+    - "filesystem.read"
+    - "process.list"
+    - "process.info"
+    - "system.info"
+
 security:
   # Tool-system security mode: lockdown | normal | development
   # lockdown: SAFE tools only. normal: SAFE/LOW auto, MEDIUM/HIGH ask.

@@ -100,6 +100,15 @@ def test_coerce_env_path_list() -> None:
         coerce_env("path_list", ";;")
 
 
+def test_coerce_env_string_list() -> None:
+    assert coerce_env("string_list", "system.info, filesystem.read") == [
+        "system.info",
+        "filesystem.read",
+    ]
+    with pytest.raises(ValueError):
+        coerce_env("string_list", " , ")
+
+
 def test_invalid_risk_level() -> None:
     problems = validate({"tools": {"terminal": {"default_risk": "ALWAYS"}}})
     assert problems[0].field == "terminal.default_risk"
@@ -186,6 +195,22 @@ def test_apply_env_num_gpu_coercion() -> None:
     raw = {"ai": {"providers": {"local": {"num_gpu": -1}}}}
     apply_env(raw, {"GREATSAGE_AI__PROVIDERS__LOCAL__NUM_GPU": "0"})
     assert raw["ai"]["providers"]["local"]["num_gpu"] == 0
+
+
+def test_apply_env_mcp_allowed_tools_coercion() -> None:
+    raw = {"mcp": {"allowed_tools": []}}
+    apply_env(
+        raw,
+        {"GREATSAGE_MCP__ALLOWED_TOOLS": "system.info, filesystem.read"},
+    )
+    assert raw["mcp"]["allowed_tools"] == ["system.info", "filesystem.read"]
+
+
+def test_mcp_allowed_tools_rejects_non_strings() -> None:
+    problems = validate({"mcp": {"allowed_tools": ["system.info", 3]}})
+    assert len(problems) == 1
+    assert problems[0].section == "mcp"
+    assert problems[0].field == "allowed_tools"
 
 
 def test_apply_env_int_list_coercion() -> None:

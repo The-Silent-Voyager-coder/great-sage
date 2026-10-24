@@ -190,3 +190,16 @@ non-completed state, runtime failure); `2` invalid prompt/configuration.
   snapshot-then-consume fix is covered by them.
 - Verification: `pytest`, `ruff check .`, `mypy greatsage`, config validate,
   CLI smoke, tree clean, commit, stop.
+
+## 12. Normal Chat Boundary
+
+Normal conversation (`greatsage chat`) is **not** an agent run:
+
+- It builds `AIRequest` with `tools=None` and has no tool loop.
+- It never consults `ToolService`, the MCP server, or agent approval gates.
+- If routed through OpenCode, the provider creates a session with a deny-all
+  permission ruleset; OpenCode's native and MCP tools cannot execute.
+- Tool use belongs to `greatsage agent run`, plan/task execution, or an
+  explicit MCP client; enabling MCP does not change chat behavior.
+- This is a tested contract, not a prompt instruction: the chat regression
+  test asserts the request carries no tool definitions.
