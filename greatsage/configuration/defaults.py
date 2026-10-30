@@ -123,6 +123,20 @@ DEFAULTS: dict[str, object] = {
         "poll_timeout_seconds": 20.0,
         "max_listen_seconds": 600.0,
     },
+    "mcp": {
+        # Local stdio MCP server for OpenCode/other MCP clients. The default
+        # surface is intentionally read-only; write/shell/gui tools must be
+        # added explicitly and still pass the normal security pipeline.
+        "enabled": True,
+        "allowed_tools": [
+            "filesystem.list",
+            "filesystem.stat",
+            "filesystem.read",
+            "process.list",
+            "process.info",
+            "system.info",
+        ],
+    },
     "security": {
         "mode": "normal",
         "default_mode": "ask",

@@ -261,6 +261,14 @@ class VoiceConfig:
 
 
 @dataclass(frozen=True)
+class McpConfig:
+    """Local MCP server settings (OpenCode/other MCP clients)."""
+
+    enabled: bool
+    allowed_tools: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class SageConfig:
     """Root immutable configuration object."""
     core: CoreConfig
@@ -279,6 +287,7 @@ class SageConfig:
     telegram: TelegramConfig
     security: SecurityConfig
     voice: VoiceConfig
+    mcp: McpConfig
 
 
 # Previous-generation alias (past life: Jarvis). New code must use SageConfig.

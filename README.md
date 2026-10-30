@@ -35,7 +35,12 @@ human control surface around it:
 - Local control plane: `greatsage serve` exposes a loopback-only dashboard
   for pending approvals, bounded agent runs, explicit approved READY
   plan/task runs, and persisted recent-run metadata through the same pipeline.
-- Full suite: **1,282 tests collected**, passing; `ruff` and `mypy` clean.
+- Local MCP bridge: `greatsage mcp serve --stdio` exposes only
+  `mcp.allowed_tools` (read-only by default) through the normal
+  `ToolService` policy/approval/audit pipeline; normal `greatsage chat`
+  remains tool-free.
+- Full suite: **1,303 tests collected** (1,302 passed, 1 skipped); `ruff` and
+  `mypy` clean.
 
 ## Phase 4 — Tool System
 

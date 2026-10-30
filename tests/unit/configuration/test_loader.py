@@ -26,6 +26,8 @@ def test_defaults_load_without_file(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert loaded.config.core.name == "Great Sage"
     assert loaded.config.security.default_mode is SecurityMode.ASK
     assert loaded.config.ai.opencode.base_url == "http://127.0.0.1:4096"
+    assert loaded.config.mcp.enabled is True
+    assert "system.info" in loaded.config.mcp.allowed_tools
     assert loaded.config.ai.local.num_gpu == -1
 
 

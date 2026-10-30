@@ -336,6 +336,17 @@ class TestGenerate:
         # Empty response should not be appended to history
         assert len(session._history) == 2  # system + user only
 
+    def test_normal_chat_never_sends_tool_definitions(self, tmp_path: Path) -> None:
+        cfg = load_config(write_config(tmp_path)).config
+        intel = make_mock_intelligence("plain reply")
+        session = ChatSession(cfg, intel, text_mode=True)
+
+        session._generate("hello")
+
+        request = intel.generate.call_args.args[0]
+        assert request.tools is None
+        assert request.metadata["source"] == "chat"
+
 
 class TestProcessInput:
     def test_process_input_returns_false_on_exit(self, tmp_path: Path) -> None:

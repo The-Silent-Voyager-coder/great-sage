@@ -821,3 +821,48 @@ newest matches first (default 50, max 500). Both read
 `security.audit_log`, never create or modify it, and re-apply secret redaction
 on read. Text mode prints a bounded operational line; `--json` prints the
 parsed entries, with malformed lines surfaced as redacted `raw` records.
+
+## 15. Local MCP Server (`greatsage mcp`)
+
+```text
+greatsage mcp tools [--config PATH] [--json]
+greatsage mcp serve --stdio [--config PATH]
+```
+
+- The transport is newline-delimited JSON-RPC 2.0 over stdin/stdout
+  (MCP stdio). Stdout carries protocol messages only; logs go to stderr and
+  the configured rotating log file.
+- `initialize`, `ping`, `tools/list`, and `tools/call` are supported.
+  Notifications (`notifications/*`) produce no response.
+- `mcp.allowed_tools` is the complete exposure list. The default allowlist is
+  read-only: `filesystem.list`, `filesystem.stat`, `filesystem.read`,
+  `process.list`, `process.info`, `system.info`.
+- MCP names are namespaced (`greatsage_<tool_id with dots replaced>`), for
+  example `greatsage_system_info`. Clients cannot request an unlisted tool.
+- Every `tools/call` becomes a `greatsage.tools.models.ToolRequest` with
+  `source="mcp"` and goes through `ToolService.execute`: normal policy, path
+  checks, approval gate, bounded execution, and `TOOL_*` audit events. There
+  is no direct tool invocation path.
+- The server installs no approval provider, so an `ASK` decision fails
+  closed. `critical` tools remain denied.
+- The normal conversation loop (`greatsage chat`) is tool-free by contract:
+  it constructs `AIRequest` with `tools=None` and never consults the MCP
+  server. MCP is for coding/agent clients, not ordinary chat.
+- `greatsage mcp tools` reports the resolved allowlist without accepting
+  calls. `mcp.enabled: false` makes both commands fail cleanly.
+
+OpenCode local-server configuration:
+
+```json
+"mcp": {
+  "great-sage": {
+    "type": "local",
+    "command": ["greatsage", "mcp", "serve", "--stdio"],
+    "disabled": false
+  }
+}
+```
+
+Do not add shell/write/gui tools to the allowlist by default. If they are
+added, policy still governs each call, and `ASK` remains fail-closed under
+stdio.

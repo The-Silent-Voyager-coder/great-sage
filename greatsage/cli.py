@@ -18,6 +18,8 @@ Commands:
     greatsage tools health [--config PATH]       tool subsystem health
     greatsage tools execute <tool> NAME=VALUE …  run a tool through the security
             pipeline (denied by default; --approve opts into approvals)
+    greatsage mcp tools [--config PATH]          show the MCP-exposed tool allowlist
+    greatsage mcp serve --stdio [--config PATH]  local MCP server for OpenCode
     greatsage agent health [--config PATH]        agent subsystem health
     greatsage agent run --prompt "…" [--interactive] [--config PATH]
             run a bounded agent task through the same security pipeline
@@ -426,6 +428,27 @@ def _build_parser() -> argparse.ArgumentParser:
         help="use an approving approval provider (default: denials)",
     )
     tools_execute.add_argument("--session-id", default=None, help="session isolation context")
+
+    mcp_parser = subparsers.add_parser(
+        "mcp", help="local MCP server for OpenCode and other MCP clients"
+    )
+    mcp_sub = mcp_parser.add_subparsers(dest="mcp_command", metavar="SUBCOMMAND")
+    mcp_serve = mcp_sub.add_parser(
+        "serve", help="serve the configured tool allowlist over stdio"
+    )
+    mcp_serve.add_argument(
+        "--stdio",
+        action="store_true",
+        help="use JSON-RPC over stdin/stdout (currently the only transport)",
+    )
+    mcp_serve.add_argument(
+        "--config", metavar="PATH", default=None, help="configuration file to use"
+    )
+    mcp_tools = mcp_sub.add_parser("tools", help="show the MCP-exposed tools")
+    mcp_tools.add_argument(
+        "--config", metavar="PATH", default=None, help="configuration file to use"
+    )
+    mcp_tools.add_argument("--json", action="store_true", help="machine-readable output")
 
     agent_parser = subparsers.add_parser("agent", help="agent commands")
     agent_sub = agent_parser.add_subparsers(dest="agent_command", metavar="SUBCOMMAND")
@@ -1330,6 +1353,66 @@ def _cmd_tools_execute(args: argparse.Namespace) -> int:
     if result.output is not None:
         print(json.dumps(result.output, indent=2))
     return EXIT_OK if result.success else EXIT_FAILURE
+
+
+# --- mcp -----------------------------------------------------------------
+
+
+def _cmd_mcp_tools(args: argparse.Namespace) -> int:
+    try:
+        runtime = _runtime_from_args(args)
+    except ConfigurationError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_INVALID
+    try:
+        if not runtime.config.mcp.enabled:
+            print("greatsage mcp: MCP server is disabled", file=sys.stderr)
+            return EXIT_FAILURE
+        from greatsage.mcp import McpToolServer
+
+        server = McpToolServer(
+            runtime.tools, runtime.config.mcp.allowed_tools
+        )
+        try:
+            tools = server.describe()
+        except SageError as exc:
+            print(f"greatsage mcp tools: {exc}", file=sys.stderr)
+            return EXIT_FAILURE
+    finally:
+        asyncio.run(runtime.stop())
+    if args.json:
+        print(json.dumps({"tools": tools}, indent=2))
+        return EXIT_OK
+    print("Great Sage MCP Tools")
+    if not tools:
+        print("  (none)")
+    for tool in tools:
+        print(f"  {tool['name']:<32} {tool['description']}")
+    return EXIT_OK
+
+
+def _cmd_mcp_serve(args: argparse.Namespace) -> int:
+    if not args.stdio:
+        print(
+            "greatsage mcp serve: only --stdio is supported",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID
+    try:
+        runtime = _runtime_from_args(args)
+    except ConfigurationError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_INVALID
+    try:
+        if not runtime.config.mcp.enabled:
+            print("greatsage mcp serve: MCP server is disabled", file=sys.stderr)
+            return EXIT_FAILURE
+        from greatsage.mcp import McpToolServer, serve_stdio
+
+        server = McpToolServer(runtime.tools, runtime.config.mcp.allowed_tools)
+        return serve_stdio(server)
+    finally:
+        asyncio.run(runtime.stop())
 
 
 # --- agent ---------------------------------------------------------------
@@ -3263,6 +3346,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.tools_command == "execute":
             return _cmd_tools_execute(args)
         parser.error("tools requires a subcommand: list, info, health, execute")
+    if args.command == "mcp":
+        if args.mcp_command == "serve":
+            return _cmd_mcp_serve(args)
+        if args.mcp_command == "tools":
+            return _cmd_mcp_tools(args)
+        parser.error("mcp requires a subcommand: serve, tools")
     if args.command == "agent":
         if args.agent_command == "health":
             return _cmd_agent_health(args)

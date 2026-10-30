@@ -21,6 +21,7 @@ from greatsage.configuration.model import (
     EventsConfig,
     LocalProviderConfig,
     LoggingConfig,
+    McpConfig,
     MemoryConfig,
     OpenCodeProviderConfig,
     PlanningConfig,
@@ -48,6 +49,7 @@ PROVIDER_NAMES = frozenset({"local", "opencode"})
 Kind = Literal[
     "str", "nonempty_str", "path", "path_list", "int", "positive_int", "nonneg_int",
     "positive_number", "bool", "enum", "url", "mapping", "confidence", "int_list",
+    "string_list",
 ]
 
 
@@ -58,6 +60,7 @@ def _describe(kind: Kind) -> str:
         "path": "absolute filesystem path",
         "path_list": "list of absolute filesystem paths",
         "int_list": "list of integers",
+        "string_list": "list of non-empty strings",
         "int": "integer",
         "positive_int": "integer greater than zero",
         "nonneg_int": "integer greater than or equal to zero",
@@ -199,6 +202,10 @@ SCHEMA: dict[str, dict[str, Field]] = {
         "poll_timeout_seconds": Field("positive_number", _describe("positive_number")),
         "max_listen_seconds": Field("positive_number", _describe("positive_number")),
     },
+    "mcp": {
+        "enabled": Field("bool", _describe("bool")),
+        "allowed_tools": Field("string_list", _describe("string_list")),
+    },
     "security": {
         "mode": Field(
             "enum",
@@ -330,7 +337,9 @@ def validate(raw: dict[str, Any]) -> list[ConfigProblem]:
                     _check_scalar(section, name, field, value, errors)
             elif field.kind == "mapping" and not isinstance(value, dict):
                 errors.append(_problem_for_field(field, value, section, name))
-            elif field.kind == "path_list" and not _matches_path_list(value):
+            elif field.kind in ("path_list", "int_list", "string_list") and not _matches(
+                field.kind, value
+            ):
                 errors.append(_problem_for_field(field, value, section, name))
 
     memory = raw.get("memory")
@@ -631,6 +640,10 @@ def _matches(kind: Kind, value: Any) -> bool:
         return isinstance(value, list) and all(
             isinstance(item, int) and not isinstance(item, bool) for item in value
         )
+    if kind == "string_list":
+        return isinstance(value, list) and all(
+            isinstance(item, str) and bool(item.strip()) for item in value
+        )
     if kind == "url":
         if not isinstance(value, str):
             return False
@@ -697,6 +710,11 @@ def coerce_env(kind: Kind, raw: str) -> Any:
                     f"expected comma-separated integers, got {raw!r}"
                 ) from exc
         return values
+    if kind == "string_list":
+        string_values = [item.strip() for item in raw.split(",") if item.strip()]
+        if not string_values:
+            raise ValueError(f"expected comma-separated strings, got {raw!r}")
+        return string_values
     return raw
 
 
@@ -889,6 +907,11 @@ def build_config(raw: dict[str, Any]) -> SageConfig:
         max_listen_seconds=float(raw["telegram"]["max_listen_seconds"]),
     )
 
+    mcp = McpConfig(
+        enabled=bool(raw["mcp"]["enabled"]),
+        allowed_tools=tuple(str(tool) for tool in raw["mcp"]["allowed_tools"]),
+    )
+
     security = SecurityConfig(
         default_mode=SecurityMode(str(raw["security"]["default_mode"])),
         mode=ToolSecurityMode(str(raw["security"]["mode"])),
@@ -930,4 +953,5 @@ def build_config(raw: dict[str, Any]) -> SageConfig:
         telegram=telegram,
         security=security,
         voice=voice,
+        mcp=mcp,
     )

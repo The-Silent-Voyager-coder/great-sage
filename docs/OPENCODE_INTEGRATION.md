@@ -169,3 +169,40 @@ permission response, no agent loop:
   the adapter stays deliberately narrower than the eventual client so nothing
   depends on unverified endpoints. `greatsage/integration/` is reserved (empty)
   — the OpenCode wire lives in `greatsage/intelligence/opencode.py`.
+
+## 9. MCP Bridge (post-Phase 10)
+
+Live probing confirmed the boundary: OpenCode executes its own `read`/`edit`/
+`bash` tools server-side, exposes tool state in the session message timeline,
+and routes `external_directory`/`edit`/`bash` decisions through its permission
+API. The prompt API accepts text/files/agents/skills, not client-side tool
+results, so OpenCode's model cannot call Great Sage `ToolService` tools
+through the provider API alone.
+
+The supported bridge is a local MCP server:
+
+```json
+"mcp": {
+  "great-sage": {
+    "type": "local",
+    "command": ["greatsage", "mcp", "serve", "--stdio"],
+    "disabled": false
+  }
+}
+```
+
+- `tools/list` returns only `mcp.allowed_tools` (default read-only).
+- `tools/call` reaches `ToolService.execute`; Great Sage policy remains
+  authoritative.
+- Stdio has no approval provider, so `ASK` fails closed. Do not add
+  shell/write/gui tools without a separate approval design.
+- Use MCP only for coding/agent sessions. `greatsage chat` is tool-free by
+  contract and never consults the MCP server. When chat is routed through
+  OpenCode, the provider creates the session with a deny-all permission
+  ruleset, so OpenCode's native and MCP tools cannot execute.
+- In OpenCode, keep the MCP configuration scoped to the executor/agent
+  profile rather than a normal conversation profile where possible.
+- OpenCode's own tools and Great Sage MCP tools should not be treated as
+  interchangeable: OpenCode reads/edits the workspace; Great Sage exposes
+  its read-only inventory/system surface and, later, deliberate memory
+  tools.

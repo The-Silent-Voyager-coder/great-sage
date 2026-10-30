@@ -308,3 +308,32 @@ The interactive dashboard is a control surface, not a second execution path:
   first verifies that the recorded loopback dashboard answers; a stale or
   unresponsive PID is not killed. The page token remains in the served HTML
   only.
+
+## 14. Local MCP Server (`greatsage mcp`)
+
+The MCP server is another client of the tool pipeline, not another authority:
+
+- **Transport only.** `greatsage/mcp/` maps MCP `tools/list` and `tools/call`
+  to the existing `ToolRegistry` and `ToolService.execute`; it contains no
+  direct tool invocation and no policy logic of its own.
+- **Explicit allowlist.** Only `mcp.allowed_tools` is advertised and callable.
+  The default surface is read-only. Unlisted tools are unknown to the client;
+  a crafted name cannot reach the registry.
+- **Namespaced names.** MCP names are `greatsage_<tool_id>` with dots replaced
+  by underscores. The server resolves them through its private catalog.
+- **Fail closed on approval.** The stdio server installs no approval provider.
+  An `ASK` decision is denied, `critical` remains denied in every mode, and
+  adding a write/shell/gui tool to the allowlist does not bypass policy.
+- **Local stdio only.** There is no network listener, no remote MCP endpoint,
+  and no token to leak. Stdout is protocol-only; logs go to stderr/file.
+- **Audited.** Every call produces the normal `TOOL_*` events with
+  `source="mcp"` and a per-server session id; argument values/secrets are not
+  published.
+- **Normal chat is tool-free.** `greatsage chat` constructs `AIRequest` with
+  `tools=None` and never consults the MCP server or ToolService. MCP is for
+  coding/agent clients; conversation remains conversation. If chat is routed
+  through OpenCode, the provider creates the OpenCode session with a
+  deny-all permission ruleset so neither OpenCode's native tools nor MCP
+  tools can execute.
+- **No automatic tool grant.** Configuring an MCP client does not grant it
+  Great Sage authority. The security layer still decides each call.
