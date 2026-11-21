@@ -20,9 +20,11 @@ import ctypes
 import struct
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from greatsage.exceptions import VisionError
 from greatsage.tools.models import BaseTool, ToolCategory, ToolContext, ToolResult, ToolRisk
 
 _MAX_TYPE_CHARS = 500
@@ -137,6 +139,79 @@ def _type_text(text: str, enter: bool) -> None:
         user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
 
 
+def _verify_options(
+    tool_id: str, arguments: dict[str, Any]
+) -> tuple[bool, int, ToolResult | None]:
+    """Validate `verify`/`wait_ms` and return (verify, wait_ms, error)."""
+    verify = arguments.get("verify", False)
+    if not isinstance(verify, bool):
+        return False, 0, ToolResult(
+            request_id="", tool_id=tool_id, success=False,
+            error=f"{tool_id} verify must be a boolean",
+        )
+    wait_ms = arguments.get("wait_ms", 400)
+    if isinstance(wait_ms, bool) or not isinstance(wait_ms, int):
+        return False, 0, ToolResult(
+            request_id="", tool_id=tool_id, success=False,
+            error=f"{tool_id} wait_ms must be an integer",
+        )
+    if not 0 <= wait_ms <= 3000:
+        return False, 0, ToolResult(
+            request_id="", tool_id=tool_id, success=False,
+            error=f"{tool_id} wait_ms must be in 0..3000",
+        )
+    return verify, wait_ms, None
+
+
+def _capture_before(
+    tool_id: str,
+    capture: Callable[[], tuple[int, int, bytes]],
+) -> tuple[bytes | None, ToolResult | None]:
+    """Capture the pre-action frame; a failure means the action must not run."""
+    try:
+        _width, _height, bmp = capture()
+    except OSError as exc:
+        return None, ToolResult(
+            request_id="", tool_id=tool_id, success=False,
+            error=f"{tool_id} verify capture before action failed: {exc}",
+        )
+    return bmp, None
+
+
+def _verification_output(
+    tool_id: str,
+    before: bytes,
+    capture: Callable[[], tuple[int, int, bytes]],
+    sleep: Callable[[float], None],
+    wait_ms: int,
+) -> dict[str, Any]:
+    """Wait, capture the post-action frame, and summarize the visual delta."""
+    from greatsage.vision.diff import compare_bmp_frames
+
+    sleep(wait_ms / 1000)
+    try:
+        _width, _height, after = capture()
+    except OSError as exc:
+        return {
+            "verified": False,
+            "verify_error": f"{tool_id} verify capture after action failed: {exc}",
+        }
+    try:
+        diff = compare_bmp_frames(before, after)
+    except VisionError as exc:
+        return {
+            "verified": False,
+            "verify_error": f"{tool_id} verify comparison failed: {exc}",
+        }
+    return {
+        "verified": True,
+        "screen_changed": diff.changed,
+        "change_ratio": round(diff.change_ratio, 6),
+        "changed_pixels": diff.changed_pixels,
+        "summary": diff.summary,
+    }
+
+
 class GuiScreenshotTool(BaseTool):
     id = "gui.screenshot"
     name = "GUI screenshot"
@@ -195,8 +270,11 @@ class GuiScreenshotTool(BaseTool):
 class GuiClickTool(BaseTool):
     id = "gui.click"
     name = "GUI click"
-    description = "Click at screen coordinates (acts on the machine; always ASK-gated)."
-    version = "1.0.0"
+    description = (
+        "Click at screen coordinates (acts on the machine; always ASK-gated). "
+        "Set verify=true to capture before/after and report whether the screen changed."
+    )
+    version = "1.1.0"
     risk_level = ToolRisk.HIGH
     category = ToolCategory.GUI
     capabilities = ("act",)
@@ -206,6 +284,8 @@ class GuiClickTool(BaseTool):
             "x": {"type": "integer"},
             "y": {"type": "integer"},
             "button": {"type": "string"},
+            "verify": {"type": "boolean"},
+            "wait_ms": {"type": "integer"},
         },
         "required": ["x", "y"],
     }
@@ -215,9 +295,25 @@ class GuiClickTool(BaseTool):
             "x": {"type": "integer"},
             "y": {"type": "integer"},
             "button": {"type": "string"},
+            "verified": {"type": "boolean"},
+            "screen_changed": {"type": "boolean"},
+            "change_ratio": {"type": "number"},
+            "changed_pixels": {"type": "integer"},
+            "summary": {"type": "string"},
         },
         "required": ["x", "y", "button"],
     }
+
+    def __init__(
+        self,
+        *,
+        capture: Callable[[], tuple[int, int, bytes]] | None = None,
+        click: Callable[[int, int, bool], None] | None = None,
+        sleep: Callable[[float], None] | None = None,
+    ) -> None:
+        self._capture = capture or capture_primary_monitor_bmp
+        self._click = click or _click_at
+        self._sleep = sleep or time.sleep
 
     def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         gated = _windows_only(self.id)
@@ -237,22 +333,35 @@ class GuiClickTool(BaseTool):
         if button not in ("left", "right"):
             return ToolResult(request_id="", tool_id=self.id, success=False,
                               error="gui.click button must be left or right")
+        verify, wait_ms, invalid = _verify_options(self.id, arguments)
+        if invalid is not None:
+            return invalid
+        before: bytes | None = None
+        if verify:
+            before, capture_error = _capture_before(self.id, self._capture)
+            if capture_error is not None:
+                return capture_error
         try:
-            _click_at(x, y, right=button == "right")
+            self._click(x, y, button == "right")
         except OSError as exc:
             return ToolResult(request_id="", tool_id=self.id, success=False,
                               error=f"gui.click failed: {exc}")
-        return ToolResult(
-            request_id="", tool_id=self.id, success=True,
-            output={"x": x, "y": y, "button": button},
-        )
+        output: dict[str, Any] = {"x": x, "y": y, "button": button}
+        if verify and before is not None:
+            output.update(
+                _verification_output(self.id, before, self._capture, self._sleep, wait_ms)
+            )
+        return ToolResult(request_id="", tool_id=self.id, success=True, output=output)
 
 
 class GuiTypeTool(BaseTool):
     id = "gui.type"
     name = "GUI type"
-    description = "Type text into the focused window (acts on the machine; always ASK-gated)."
-    version = "1.0.0"
+    description = (
+        "Type text into the focused window (acts on the machine; always ASK-gated). "
+        "Set verify=true to capture before/after and report whether the screen changed."
+    )
+    version = "1.1.0"
     risk_level = ToolRisk.HIGH
     category = ToolCategory.GUI
     capabilities = ("act",)
@@ -261,6 +370,8 @@ class GuiTypeTool(BaseTool):
         "properties": {
             "text": {"type": "string"},
             "enter": {"type": "boolean"},
+            "verify": {"type": "boolean"},
+            "wait_ms": {"type": "integer"},
         },
         "required": ["text"],
     }
@@ -269,9 +380,25 @@ class GuiTypeTool(BaseTool):
         "properties": {
             "typed_chars": {"type": "integer"},
             "enter": {"type": "boolean"},
+            "verified": {"type": "boolean"},
+            "screen_changed": {"type": "boolean"},
+            "change_ratio": {"type": "number"},
+            "changed_pixels": {"type": "integer"},
+            "summary": {"type": "string"},
         },
         "required": ["typed_chars", "enter"],
     }
+
+    def __init__(
+        self,
+        *,
+        capture: Callable[[], tuple[int, int, bytes]] | None = None,
+        type_text: Callable[[str, bool], None] | None = None,
+        sleep: Callable[[float], None] | None = None,
+    ) -> None:
+        self._capture = capture or capture_primary_monitor_bmp
+        self._type_text = type_text or _type_text
+        self._sleep = sleep or time.sleep
 
     def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         gated = _windows_only(self.id)
@@ -288,12 +415,22 @@ class GuiTypeTool(BaseTool):
         if not isinstance(enter, bool):
             return ToolResult(request_id="", tool_id=self.id, success=False,
                               error="gui.type enter must be a boolean")
+        verify, wait_ms, invalid = _verify_options(self.id, arguments)
+        if invalid is not None:
+            return invalid
+        before: bytes | None = None
+        if verify:
+            before, capture_error = _capture_before(self.id, self._capture)
+            if capture_error is not None:
+                return capture_error
         try:
-            _type_text(text, enter)
+            self._type_text(text, enter)
         except OSError as exc:
             return ToolResult(request_id="", tool_id=self.id, success=False,
                               error=f"gui.type failed: {exc}")
-        return ToolResult(
-            request_id="", tool_id=self.id, success=True,
-            output={"typed_chars": len(text), "enter": enter},
-        )
+        output: dict[str, Any] = {"typed_chars": len(text), "enter": enter}
+        if verify and before is not None:
+            output.update(
+                _verification_output(self.id, before, self._capture, self._sleep, wait_ms)
+            )
+        return ToolResult(request_id="", tool_id=self.id, success=True, output=output)

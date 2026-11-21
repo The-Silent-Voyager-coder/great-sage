@@ -62,7 +62,10 @@ Tool calls carry structured arguments only (`id`, `tool_id`, `arguments`,
 The run's system note tells the model to answer directly when no tool is
 needed, avoid homeassistant/network/gui tools unless explicitly asked, and
 explain tool failures in plain language instead of printing raw error JSON.
-Adherence is model-dependent; the tool security pipeline remains authoritative.
+For GUI actions it directs the model to set `verify=true` and treat
+`screen_changed: false` as "do not claim success" — the tool returns
+metadata-only change evidence, never pixels. Adherence is model-dependent;
+the tool security pipeline remains authoritative.
 
 ## 4. Hard Limits (config + ceilings)
 

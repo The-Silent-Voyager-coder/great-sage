@@ -16,10 +16,11 @@ import re
 from pathlib import Path
 from typing import Any
 
-from greatsage.exceptions import VisionError
+from greatsage.exceptions import VisionError, VisionValidationError
 from greatsage.tools.models import BaseTool, ToolCategory, ToolContext, ToolResult, ToolRisk
 from greatsage.tools.registry import ToolRegistry
 from greatsage.vision.capture import CaptureManager, StubCaptureBackend, parse_bmp_dimensions
+from greatsage.vision.diff import compare_bmp_frames
 from greatsage.vision.grounding import GroundingStub, OllamaGrounding
 from greatsage.vision.limits import (
     DEFAULT_HEIGHT,
@@ -201,14 +202,121 @@ class VisionDescribeTool(BaseTool):
             )
         except Exception as exc:  # grounding failure is an honest tool failure
             return _failure(self.id, f"grounding failed: {exc}")
+        regions: list[dict[str, Any]] = []
+        for index, region in enumerate(description.regions):
+            item = region.to_dict()
+            item["index"] = index
+            item["center_x"] = round((region.x + region.width / 2) * width)
+            item["center_y"] = round((region.y + region.height / 2) * height)
+            regions.append(item)
         return ToolResult(
             request_id="",
             tool_id=self.id,
             success=True,
             output={
                 "summary": description.summary,
-                "regions": [r.to_dict() for r in description.regions],
+                "regions": regions,
                 "truncated": description.truncated,
+            },
+        )
+
+
+class VisionCompareTool(BaseTool):
+    """Compare two stored BMP frames; returns change metadata, never pixels."""
+
+    id = "vision.compare"
+    name = "Vision compare"
+    description = (
+        "Compare two BMP frames and report whether the screen changed, by how "
+        "much, and where (aggregate metadata only)."
+    )
+    version = "1.0.0"
+    risk_level = ToolRisk.SAFE
+    category = ToolCategory.SYSTEM
+    capabilities: tuple[str, ...] = ("observe",)
+    PATH_ARGUMENTS: tuple[str, ...] = ("before_path", "after_path")
+    input_schema: dict[str, object] = {
+        "type": "object",
+        "properties": {
+            "before_path": {"type": "string"},
+            "after_path": {"type": "string"},
+            "pixel_threshold": {"type": "integer"},
+            "max_regions": {"type": "integer"},
+        },
+        "required": ["before_path", "after_path"],
+    }
+    output_schema: dict[str, object] = {
+        "type": "object",
+        "properties": {
+            "changed": {"type": "boolean"},
+            "summary": {"type": "string"},
+            "change_ratio": {"type": "number"},
+            "changed_pixels": {"type": "integer"},
+            "total_pixels": {"type": "integer"},
+            "width": {"type": "integer"},
+            "height": {"type": "integer"},
+            "dimensions_changed": {"type": "boolean"},
+            "regions": {"type": "array"},
+        },
+        "required": ["changed", "summary", "change_ratio", "regions"],
+    }
+
+    def __init__(self, limits: VisionLimits | None = None) -> None:
+        self._limits = limits or default_limits()
+
+    def _read_frame(self, raw: Any, context: ToolContext, field: str) -> bytes:
+        if not isinstance(raw, str) or not raw.strip():
+            raise VisionValidationError(f"{field} must be a non-empty string")
+        path = Path(raw.strip())
+        if not path.is_absolute():
+            path = context.working_directory / path
+        if path.suffix.lower() != ".bmp":
+            raise VisionValidationError(f"{field} must point at a .bmp file")
+        try:
+            image = path.read_bytes()
+        except OSError as exc:
+            raise VisionValidationError(f"cannot read {field}: {exc}") from exc
+        if len(image) > self._limits.max_image_bytes:
+            raise VisionValidationError(
+                f"{field} is {len(image)} bytes, over the "
+                f"{self._limits.max_image_bytes}-byte limit"
+            )
+        return image
+
+    def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
+        pixel_threshold = arguments.get("pixel_threshold", 8)
+        if isinstance(pixel_threshold, bool) or not isinstance(pixel_threshold, int):
+            return _failure(self.id, "pixel_threshold must be an integer")
+        max_regions = arguments.get("max_regions", 6)
+        if isinstance(max_regions, bool) or not isinstance(max_regions, int):
+            return _failure(self.id, "max_regions must be an integer")
+        try:
+            before = self._read_frame(arguments.get("before_path"), context, "before_path")
+            after = self._read_frame(arguments.get("after_path"), context, "after_path")
+            diff = compare_bmp_frames(
+                before,
+                after,
+                pixel_threshold=pixel_threshold,
+                max_regions=max_regions,
+            )
+        except VisionError as exc:
+            return _failure(self.id, str(exc))
+        except OSError as exc:
+            return _failure(self.id, f"vision.compare failed: {exc}")
+        return ToolResult(
+            request_id="",
+            tool_id=self.id,
+            success=True,
+            output={
+                "changed": diff.changed,
+                "summary": diff.summary,
+                "change_ratio": round(diff.change_ratio, 6),
+                "changed_pixels": diff.changed_pixels,
+                "total_pixels": diff.total_pixels,
+                "width": diff.width,
+                "height": diff.height,
+                "dimensions_changed": diff.dimensions_changed,
+                "regions": [region.to_dict() for region in diff.regions],
             },
         )
 
@@ -227,3 +335,4 @@ def register_vision_tools(
     """
     registry.register(VisionCaptureTool(limits=limits, capture=capture))
     registry.register(VisionDescribeTool(limits=limits, grounding=grounding))
+    registry.register(VisionCompareTool(limits=limits))

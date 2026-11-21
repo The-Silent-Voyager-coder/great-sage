@@ -173,15 +173,26 @@ the request is denied — a fail-closed default.
 | `homeassistant.states` | low | read entity states (needs `HA_BASE_URL` + `HA_TOKEN` env) |
 | `homeassistant.call` | high | invoke a service — acts on the home, always ASK-gated |
 | `gui.screenshot` | medium | capture primary monitor; metadata unless saved inside allowed roots |
-| `gui.click` | high | click at coordinates (Windows-only, always ASK-gated) |
-| `gui.type` | high | type into focused window, capped (Windows-only, always ASK-gated) |
+| `gui.click` | high | click at coordinates (Windows-only, always ASK-gated); optional `verify=true` reports whether the screen changed |
+| `gui.type` | high | type into focused window, capped (Windows-only, always ASK-gated); optional `verify=true` reports whether the screen changed |
 | `voice.listen`/`speak`/`wake` | safe | transcription, synthesis, wake-word check (bounded, metadata-only outputs) |
-| `vision.capture`/`describe` | safe | bounded screen frame + local VLM grounding (metadata + regions, never pixels) |
+| `vision.capture`/`describe`/`compare` | safe | bounded screen frame + local VLM grounding (metadata + regions, never pixels); `compare` reports visual change/regions between two BMPs |
 
 `network.fetch` and `network.webfetch` resolve the target host and reject
 non-global addresses (loopback, private, link-local, metadata, multicast,
 reserved); redirect targets are revalidated before they are followed. They
 never send credentials and never accept non-HTTP(S) schemes.
+
+Visual verification is opt-in and metadata-only. `gui.click`/`gui.type` with
+`verify=true` capture an ephemeral frame before and after the action (within
+the already-approved HIGH call), wait `wait_ms` (0–3000, default 400), and
+return `screen_changed`, `change_ratio`, `changed_pixels`, and a summary such
+as `NOTHING CHANGED`. Pixel bytes are never returned, saved, logged, or
+published in events. `vision.compare` performs the same bounded comparison on
+two user-supplied BMP paths and is SAFE/READ-class. A failed pre-action
+capture aborts the action; a failed post-action capture still reports the
+action as successful but `verified=false` with `verify_error`. Regions are
+bounded (default 6, max 32) and ordered by changed-pixel count.
 
 Game-automation note: the `gui.*` tools are hands, not a player. Botting
 violates most games' terms (Supercell bans CoC botting accounts), so

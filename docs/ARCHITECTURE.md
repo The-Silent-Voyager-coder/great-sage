@@ -100,7 +100,7 @@ verifies results before claiming success.
 | `telegram/` | Remote chat bridge (Bot API long-poll, allowlisted chats, bounded listen) | roadmap C |
 | `agents/` | Reserved for composable agents (empty — Phase 7 ships as `planning/graph.py` + `verify.py`) | 7+ (reserved) |
 | `security/` | Reserved (empty by design — Phase 9 ships as `tools/redaction.py` + policy tightening) | 9 (patch) |
-| `vision/` | Bounded capture (real GDI on Windows), local VLM grounding (Ollama, stub fallback), permissioned tools | 8 |
+| `vision/` | Bounded capture (real GDI on Windows), local VLM grounding (Ollama, stub fallback), BMP change comparison, permissioned tools | 8 |
 | `interface/` | Local-first HUD status/dashboard (read-only; no `hud/` module) | 10 |
 | `control/` | Loopback HTTP control plane: token-gated dashboard, pending approvals, bounded agent runs, explicit approved plan/task runs (presentation only) | 10 + trust |
 | `integration/` | Reserved (empty — OpenCode wire lives in `intelligence/opencode.py` + `delegation/`) | 5 (via 5B) |

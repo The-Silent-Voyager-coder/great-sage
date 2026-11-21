@@ -14,6 +14,7 @@ from greatsage.vision.repository import VisionRepository
 from greatsage.vision.service import VisionService
 from greatsage.vision.tools import (
     VisionCaptureTool,
+    VisionCompareTool,
     VisionDescribeTool,
     register_vision_tools,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "VisionBackend",
     "VisionCapture",
     "VisionCaptureTool",
+    "VisionCompareTool",
     "VisionDescribeTool",
     "VisionDescription",
     "VisionLimits",
