@@ -11,6 +11,7 @@ from greatsage.tools.filesystem_tools import (
     FilesystemListTool,
     FilesystemMkdirTool,
     FilesystemReadTool,
+    FilesystemSearchTool,
     FilesystemStatTool,
     FilesystemWriteTool,
 )
@@ -177,6 +178,75 @@ def test_write_missing_parent_rejected(tmp_path: Path) -> None:
             {"path": str(tmp_path / "nope" / "f.txt"), "content": "x"},
             make_context(tmp_path),
         )
+
+
+def test_search_literal_is_case_insensitive_by_default(tmp_path: Path) -> None:
+    (tmp_path / "notes.txt").write_text("Alpha\nbeta ALPHA\n", encoding="utf-8")
+    result = FilesystemSearchTool().execute(
+        {"path": str(tmp_path), "query": "alpha"}, make_context(tmp_path)
+    )
+    assert result.success
+    assert [m["line"] for m in result.output["matches"]] == [1, 2]
+    assert result.output["files_scanned"] == 1
+
+
+def test_search_case_sensitive_and_regex(tmp_path: Path) -> None:
+    (tmp_path / "notes.txt").write_text("Alpha\nbeta\n", encoding="utf-8")
+    tool = FilesystemSearchTool()
+    context = make_context(tmp_path)
+    sensitive = tool.execute(
+        {"path": str(tmp_path), "query": "alpha", "case_sensitive": True}, context
+    )
+    assert sensitive.output["matches"] == []
+    regex = tool.execute(
+        {"path": str(tmp_path), "query": r"^be[a-z]+$", "mode": "regex"}, context
+    )
+    assert [m["line"] for m in regex.output["matches"]] == [2]
+
+
+def test_search_rejects_invalid_regex(tmp_path: Path) -> None:
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    with pytest.raises(ToolExecutionError, match="invalid regex"):
+        FilesystemSearchTool().execute(
+            {"path": str(tmp_path), "query": "[", "mode": "regex"},
+            make_context(tmp_path),
+        )
+
+
+def test_search_skips_hidden_binary_and_protected_files(tmp_path: Path) -> None:
+    (tmp_path / "visible.txt").write_text("needle", encoding="utf-8")
+    (tmp_path / ".hidden.txt").write_text("needle", encoding="utf-8")
+    (tmp_path / "sage.yaml").write_text("needle", encoding="utf-8")
+    (tmp_path / "blob.bin").write_bytes(b"\x00needle")
+    result = FilesystemSearchTool().execute(
+        {"path": str(tmp_path), "query": "needle"}, make_context(tmp_path)
+    )
+    assert [Path(m["path"]).name for m in result.output["matches"]] == ["visible.txt"]
+
+
+def test_search_caps_results_and_marks_truncated(tmp_path: Path) -> None:
+    (tmp_path / "many.txt").write_text("hit\n" * 10, encoding="utf-8")
+    result = FilesystemSearchTool().execute(
+        {"path": str(tmp_path), "query": "hit", "max_results": 3},
+        make_context(tmp_path),
+    )
+    assert len(result.output["matches"]) == 3
+    assert result.output["truncated"] is True
+    assert result.metadata["truncated"] is True
+
+
+def test_search_single_file_and_missing_path(tmp_path: Path) -> None:
+    target = tmp_path / "one.txt"
+    target.write_text("needle\n", encoding="utf-8")
+    tool = FilesystemSearchTool()
+    result = tool.execute({"path": str(target), "query": "needle"}, make_context(tmp_path))
+    assert len(result.output["matches"]) == 1
+    with pytest.raises(ToolExecutionError, match="does not exist"):
+        tool.execute({"path": str(tmp_path / "missing"), "query": "x"}, make_context(tmp_path))
+
+
+def test_search_risk_is_low() -> None:
+    assert FilesystemSearchTool.risk_level is ToolRisk.LOW
 
 
 def test_no_delete_tool_exists() -> None:

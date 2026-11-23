@@ -9,14 +9,40 @@ reaching these tools.
 from __future__ import annotations
 
 import os
+import re
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from greatsage.exceptions import ToolExecutionError
 from greatsage.tools.models import BaseTool, ToolContext, ToolResult, ToolRisk
+from greatsage.tools.pathsecurity import is_protected_path, is_within
+from greatsage.tools.redaction import redact_secrets
 
 MAX_LIST_ENTRIES = 5000
+MAX_SEARCH_RESULTS = 200
+MAX_SEARCH_FILES = 2000
+MAX_SEARCH_FILE_BYTES = 262144
+MAX_SEARCH_TOTAL_BYTES = 8 * 1024 * 1024
+MAX_SEARCH_SECONDS = 10.0
+_SEARCH_SKIP_DIRS = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".venv",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        "site-packages",
+        "dist",
+        "build",
+    }
+)
 
 
 def _iso(mtime: float | None) -> str | None:
@@ -235,6 +261,176 @@ class FilesystemReadTool(BaseTool):
                 "content": content,
                 "bytes_read": len(data[:limit]),
                 "truncated": truncated,
+            },
+        )
+
+
+class FilesystemSearchTool(BaseTool):
+    """Bounded literal/regex search over text files under one path."""
+
+    id = "filesystem.search"
+    name = "Search file contents"
+    description = (
+        "Search text files under a path for a literal or regex query "
+        "(bounded; skips hidden, binary, and protected files)."
+    )
+    version = "1.0.0"
+    risk_level = ToolRisk.LOW
+    capabilities = ("read", "search")
+    PATH_ARGUMENTS = ("path",)
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "file or directory to search"},
+            "query": {"type": "string", "description": "literal text or regex"},
+            "mode": {"type": "string", "description": "literal (default) or regex"},
+            "case_sensitive": {"type": "boolean"},
+            "max_results": {"type": "integer"},
+            "max_files": {"type": "integer"},
+        },
+        "required": ["path", "query"],
+    }
+    output_schema = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "query": {"type": "string"},
+            "matches": {"type": "array"},
+            "files_scanned": {"type": "integer"},
+            "truncated": {"type": "boolean"},
+        },
+        "required": ["path", "query", "matches", "files_scanned", "truncated"],
+    }
+
+    def execute(
+        self, arguments: dict[str, Any], context: ToolContext
+    ) -> ToolResult:
+        path = _resolve(arguments, context)
+        if not path.exists():
+            raise ToolExecutionError(f"path does not exist: {path}")
+        query = arguments.get("query")
+        if not isinstance(query, str) or not query.strip():
+            raise ToolExecutionError("query must be a non-empty string")
+        query = query.strip()
+        if len(query) > 500:
+            raise ToolExecutionError("query is capped at 500 characters")
+        mode = str(arguments.get("mode", "literal")).strip().lower()
+        if mode not in ("literal", "regex"):
+            raise ToolExecutionError("mode must be literal or regex")
+        case_sensitive = arguments.get("case_sensitive", False)
+        if not isinstance(case_sensitive, bool):
+            raise ToolExecutionError("case_sensitive must be a boolean")
+        max_results = arguments.get("max_results", 50)
+        if (
+            isinstance(max_results, bool)
+            or not isinstance(max_results, int)
+            or not 1 <= max_results <= MAX_SEARCH_RESULTS
+        ):
+            raise ToolExecutionError(
+                f"max_results must be an integer in 1..{MAX_SEARCH_RESULTS}"
+            )
+        max_files = arguments.get("max_files", 500)
+        if (
+            isinstance(max_files, bool)
+            or not isinstance(max_files, int)
+            or not 1 <= max_files <= MAX_SEARCH_FILES
+        ):
+            raise ToolExecutionError(
+                f"max_files must be an integer in 1..{MAX_SEARCH_FILES}"
+            )
+
+        pattern: re.Pattern[str] | None = None
+        if mode == "regex":
+            try:
+                pattern = re.compile(
+                    query, 0 if case_sensitive else re.IGNORECASE
+                )
+            except re.error as exc:
+                raise ToolExecutionError(f"invalid regex: {exc}") from exc
+        needle = query if case_sensitive else query.casefold()
+
+        root = path.resolve()
+        candidates: list[Path] = []
+        truncated = False
+        if path.is_file():
+            candidates.append(path)
+        else:
+            for current, dirs, files in os.walk(path, followlinks=False):
+                dirs[:] = sorted(
+                    name
+                    for name in dirs
+                    if not name.startswith(".") and name not in _SEARCH_SKIP_DIRS
+                )
+                for name in sorted(files):
+                    if name.startswith("."):
+                        continue
+                    candidates.append(Path(current) / name)
+                    if len(candidates) >= max_files:
+                        truncated = True
+                        break
+                if len(candidates) >= max_files:
+                    break
+
+        matches: list[dict[str, Any]] = []
+        files_scanned = 0
+        bytes_scanned = 0
+        deadline = time.monotonic() + MAX_SEARCH_SECONDS
+        for candidate in candidates:
+            if len(matches) >= max_results or time.monotonic() > deadline:
+                truncated = True
+                break
+            try:
+                resolved = candidate.resolve()
+                if not is_within(resolved, root):
+                    continue
+                if is_protected_path(resolved) or not resolved.is_file():
+                    continue
+                size = resolved.stat().st_size
+                if size > MAX_SEARCH_FILE_BYTES:
+                    continue
+                if bytes_scanned + size > MAX_SEARCH_TOTAL_BYTES:
+                    truncated = True
+                    break
+                data = resolved.read_bytes()
+            except OSError:
+                continue
+            files_scanned += 1
+            bytes_scanned += len(data)
+            if b"\x00" in data[:4096]:
+                continue
+            text = data.decode("utf-8", errors="replace")
+            for line_number, line in enumerate(text.splitlines(), 1):
+                if pattern is not None:
+                    hit = pattern.search(line) is not None
+                else:
+                    hit = needle in (line if case_sensitive else line.casefold())
+                if not hit:
+                    continue
+                matches.append(
+                    {
+                        "path": str(resolved),
+                        "line": line_number,
+                        "text": (redact_secrets(line.strip()) or "")[:300],
+                    }
+                )
+                if len(matches) >= max_results:
+                    truncated = True
+                    break
+        return ToolResult(
+            request_id="",
+            tool_id=self.id,
+            success=True,
+            output={
+                "path": str(root),
+                "query": query,
+                "matches": matches,
+                "files_scanned": files_scanned,
+                "truncated": truncated,
+            },
+            metadata={
+                "truncated": truncated,
+                "files_scanned": files_scanned,
+                "bytes_scanned": bytes_scanned,
             },
         )
 

@@ -313,7 +313,8 @@ def test_registry_access_and_defaults(tmp_path: Path) -> None:
     service, _ = make_service(tmp_path)
     ids = service.registry().list_ids()
     for tool_id in ("filesystem.list", "filesystem.stat", "filesystem.read",
-                    "filesystem.mkdir", "filesystem.write", "process.list",
+                    "filesystem.search", "filesystem.mkdir", "filesystem.write",
+                    "process.list",
                     "process.info", "system.info", "shell.execute",
                     "voice.listen", "voice.speak", "voice.wake",
                     "vision.capture", "vision.describe", "vision.compare"):

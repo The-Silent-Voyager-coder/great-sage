@@ -319,7 +319,7 @@ Coverage:
 
 ## 6h. MCP transport baseline (post-Phase 10)
 
-- **1,323 tests collected** (1,322 passed, 1 skipped); `ruff` + `mypy` clean.
+- **1,330 tests collected** (1,329 passed, 1 skipped); `ruff` + `mypy` clean.
 - New suites: `tests/unit/mcp/test_mcp_protocol.py` (JSON-RPC initialize,
   notifications, tools/list allowlist + namespacing, tools/call delegation,
   denied/unknown tool behavior, stdio parse errors) and
@@ -341,7 +341,7 @@ Coverage:
 
 ## 6i. Verified desktop-action baseline
 
-- **1,323 tests collected** (1,322 passed, 1 skipped); `ruff` + `mypy` clean.
+- **1,330 tests collected** (1,329 passed, 1 skipped); `ruff` + `mypy` clean.
 - New suites: `tests/unit/vision/test_diff.py` (top-down and bottom-up BMP
   parsing, identical/changed frames, pixel threshold, dimension changes,
   region caps, invalid input) plus additions to `test_vision_tools.py` and
@@ -353,4 +353,12 @@ Coverage:
   `verified=false`, `verify`/`wait_ms` validation, and opt-in behavior.
 - `vision.compare` is exercised directly and through the registry; the
   planning `KNOWN_TOOLS` drift guard includes it, and the CLI tool-count
-  assertions cover the 22-tool default registry.
+  assertions cover the default registry.
+
+## 6j. Bounded filesystem search baseline
+
+- `filesystem.search` (LOW) covers literal and regex modes, case sensitivity,
+  single-file and directory roots, result/file/byte caps, truncation metadata,
+  invalid-regex rejection, and the skip rules for hidden, binary, and
+  protected files. Candidate paths are resolved and checked for containment
+  before reading, so a symlink inside the search root cannot escape it.
