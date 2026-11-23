@@ -157,6 +157,7 @@ the request is denied — a fail-closed default.
 | `filesystem.list` | safe | list directory entries (optionally recursive, bounded) |
 | `filesystem.stat` | safe | file/directory metadata |
 | `filesystem.read` | low | read a text file, bounded by output limit |
+| `filesystem.search` | low | bounded literal/regex content search; skips hidden, binary, and protected files |
 | `filesystem.mkdir` | low | create a directory tree (idempotent, never removes) |
 | `filesystem.write` | medium | atomic write (or non-atomic with `atomic=false`), content capped, parent required |
 | `process.list` | safe | running processes via `tasklist` |
@@ -177,6 +178,14 @@ the request is denied — a fail-closed default.
 | `gui.type` | high | type into focused window, capped (Windows-only, always ASK-gated); optional `verify=true` reports whether the screen changed |
 | `voice.listen`/`speak`/`wake` | safe | transcription, synthesis, wake-word check (bounded, metadata-only outputs) |
 | `vision.capture`/`describe`/`compare` | safe | bounded screen frame + local VLM grounding (metadata + regions, never pixels); `compare` reports visual change/regions between two BMPs |
+
+`filesystem.search` walks a file or directory with `followlinks=False`,
+resolves each candidate, and skips anything outside the search root,
+protected files, hidden names, binary data, and common vendor/cache
+directories. It caps results (default 50, max 200), files (default 500, max
+2000), per-file bytes (256 KiB), total bytes (8 MiB), and wall time (10 s),
+and reports `truncated` plus scanned counts. Matched lines are secret-redacted
+and capped at 300 characters.
 
 `network.fetch` and `network.webfetch` resolve the target host and reject
 non-global addresses (loopback, private, link-local, metadata, multicast,

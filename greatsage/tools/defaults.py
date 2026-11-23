@@ -15,6 +15,7 @@ from greatsage.tools.filesystem_tools import (
     FilesystemListTool,
     FilesystemMkdirTool,
     FilesystemReadTool,
+    FilesystemSearchTool,
     FilesystemStatTool,
     FilesystemWriteTool,
 )
@@ -30,6 +31,7 @@ DEFAULT_TOOL_CLASSES: tuple[type, ...] = (
     FilesystemListTool,
     FilesystemStatTool,
     FilesystemReadTool,
+    FilesystemSearchTool,
     FilesystemMkdirTool,
     FilesystemWriteTool,
     ProcessListTool,
