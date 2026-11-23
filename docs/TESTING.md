@@ -319,7 +319,7 @@ Coverage:
 
 ## 6h. MCP transport baseline (post-Phase 10)
 
-- **1,303 tests collected** (1,302 passed, 1 skipped); `ruff` + `mypy` clean.
+- **1,323 tests collected** (1,322 passed, 1 skipped); `ruff` + `mypy` clean.
 - New suites: `tests/unit/mcp/test_mcp_protocol.py` (JSON-RPC initialize,
   notifications, tools/list allowlist + namespacing, tools/call delegation,
   denied/unknown tool behavior, stdio parse errors) and
@@ -338,3 +338,19 @@ Coverage:
   `GREATSAGE_MCP__ALLOWED_TOOLS` coercion. Live OpenCode probing confirmed
   server-side tool execution and the absence of a client-side tool-result API;
   the MCP transport is the supported bridge.
+
+## 6i. Verified desktop-action baseline
+
+- **1,323 tests collected** (1,322 passed, 1 skipped); `ruff` + `mypy` clean.
+- New suites: `tests/unit/vision/test_diff.py` (top-down and bottom-up BMP
+  parsing, identical/changed frames, pixel threshold, dimension changes,
+  region caps, invalid input) plus additions to `test_vision_tools.py` and
+  `test_gui_tools.py`.
+- GUI verification is tested with injected capture/click/type callables, so
+  no test moves the operator's mouse or reads the real screen. Coverage
+  includes before/after change detection, "NOTHING CHANGED", pre-capture
+  failure aborting the action, post-capture failure reported honestly as
+  `verified=false`, `verify`/`wait_ms` validation, and opt-in behavior.
+- `vision.compare` is exercised directly and through the registry; the
+  planning `KNOWN_TOOLS` drift guard includes it, and the CLI tool-count
+  assertions cover the 22-tool default registry.

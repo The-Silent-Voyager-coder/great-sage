@@ -22,6 +22,7 @@ from greatsage.tools.service import ToolService
 from greatsage.vision.capture import encode_bmp
 from greatsage.vision.tools import (
     VisionCaptureTool,
+    VisionCompareTool,
     VisionDescribeTool,
     register_vision_tools,
 )
@@ -85,6 +86,7 @@ def test_register_vision_tools() -> None:
     register_vision_tools(registry)
     assert "vision.capture" in registry.list_ids()
     assert "vision.describe" in registry.list_ids()
+    assert "vision.compare" in registry.list_ids()
     info = registry.describe("vision.capture")
     assert info["risk_level"] == "safe"
     assert "output_path" in info["input_schema"]["properties"]
@@ -93,8 +95,10 @@ def test_register_vision_tools() -> None:
 def test_tools_declare_safe_read_risk() -> None:
     assert VisionCaptureTool().risk_level is ToolRisk.SAFE
     assert VisionDescribeTool().risk_level is ToolRisk.SAFE
+    assert VisionCompareTool().risk_level is ToolRisk.SAFE
     assert VisionCaptureTool().PATH_ARGUMENTS == ("output_path",)
     assert VisionDescribeTool().PATH_ARGUMENTS == ("capture_path",)
+    assert VisionCompareTool().PATH_ARGUMENTS == ("before_path", "after_path")
 
 
 def test_capture_tool_metadata_only(tmp_path: Path) -> None:
@@ -161,6 +165,77 @@ def test_describe_tool_rejects_missing_file(tmp_path: Path) -> None:
     tool = VisionDescribeTool()
     result = tool.execute({"capture_path": str(tmp_path / "ghost.bmp")}, make_context(tmp_path))
     assert not result.success
+
+
+def test_describe_tool_reports_clickable_centers(tmp_path: Path) -> None:
+    (tmp_path / "workspace").mkdir(exist_ok=True)
+    frame = tmp_path / "workspace" / "frame.bmp"
+    frame.write_bytes(encode_bmp(64, 40))
+    result = VisionDescribeTool().execute(
+        {"capture_path": str(frame)}, make_context(tmp_path)
+    )
+    assert result.success
+    assert result.output is not None
+    first = result.output["regions"][0]
+    assert first["index"] == 0
+    assert 0 <= first["center_x"] < 64
+    assert 0 <= first["center_y"] < 40
+
+
+def test_compare_tool_reports_change(tmp_path: Path) -> None:
+    (tmp_path / "workspace").mkdir(exist_ok=True)
+    before = tmp_path / "workspace" / "before.bmp"
+    after = tmp_path / "workspace" / "after.bmp"
+    before.write_bytes(encode_bmp(32, 20, seed=0))
+    after.write_bytes(encode_bmp(32, 20, seed=1))
+    result = VisionCompareTool().execute(
+        {"before_path": str(before), "after_path": str(after)},
+        make_context(tmp_path),
+    )
+    assert result.success
+    assert result.output is not None
+    assert result.output["changed"] is True
+    assert result.output["change_ratio"] > 0
+    assert result.output["regions"]
+
+
+def test_compare_tool_reports_nothing_changed(tmp_path: Path) -> None:
+    (tmp_path / "workspace").mkdir(exist_ok=True)
+    frame = tmp_path / "workspace" / "frame.bmp"
+    frame.write_bytes(encode_bmp(32, 20))
+    result = VisionCompareTool().execute(
+        {"before_path": str(frame), "after_path": str(frame)},
+        make_context(tmp_path),
+    )
+    assert result.success
+    assert result.output is not None
+    assert result.output["changed"] is False
+    assert result.output["summary"] == "NOTHING CHANGED"
+
+
+def test_compare_tool_resolves_relative_paths(tmp_path: Path) -> None:
+    (tmp_path / "workspace").mkdir(exist_ok=True)
+    frame = tmp_path / "workspace" / "frame.bmp"
+    frame.write_bytes(encode_bmp(16, 10))
+    result = VisionCompareTool().execute(
+        {"before_path": "frame.bmp", "after_path": "frame.bmp"},
+        make_context(tmp_path),
+    )
+    assert result.success
+
+
+def test_compare_tool_rejects_missing_or_non_bmp(tmp_path: Path) -> None:
+    (tmp_path / "workspace").mkdir(exist_ok=True)
+    text = tmp_path / "workspace" / "note.txt"
+    text.write_text("not an image", encoding="utf-8")
+    tool = VisionCompareTool()
+    context = make_context(tmp_path)
+    assert not tool.execute(
+        {"before_path": "ghost.bmp", "after_path": "ghost.bmp"}, context
+    ).success
+    assert not tool.execute(
+        {"before_path": str(text), "after_path": str(text)}, context
+    ).success
 
 
 def test_policy_denies_capture_outside_roots(tmp_path: Path) -> None:

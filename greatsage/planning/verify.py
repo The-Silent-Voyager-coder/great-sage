@@ -20,7 +20,11 @@ from greatsage.planning.limits import MAX_PLAN_STEPS_CEILING
 #: fail closed at verification time (and again in the executor).
 def _known_tool_ids() -> frozenset[str]:
     from greatsage.tools.defaults import DEFAULT_TOOL_CLASSES
-    from greatsage.vision.tools import VisionCaptureTool, VisionDescribeTool
+    from greatsage.vision.tools import (
+        VisionCaptureTool,
+        VisionCompareTool,
+        VisionDescribeTool,
+    )
     from greatsage.voice.tools import VoiceListenTool, VoiceSpeakTool, VoiceWakeTool
 
     classes = (
@@ -29,6 +33,7 @@ def _known_tool_ids() -> frozenset[str]:
         VoiceSpeakTool,
         VoiceWakeTool,
         VisionCaptureTool,
+        VisionCompareTool,
         VisionDescribeTool,
     )
     ids: set[str] = set()

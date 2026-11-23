@@ -39,7 +39,7 @@ human control surface around it:
   `mcp.allowed_tools` (read-only by default) through the normal
   `ToolService` policy/approval/audit pipeline; normal `greatsage chat`
   remains tool-free.
-- Full suite: **1,303 tests collected** (1,302 passed, 1 skipped); `ruff` and
+- Full suite: **1,323 tests collected** (1,322 passed, 1 skipped); `ruff` and
   `mypy` clean.
 
 ## Phase 4 — Tool System
@@ -50,10 +50,10 @@ foundation; Phase 4 adds the permissioned tool system on top of all three:
 - **One security pipeline, no bypass**: AI → `ToolRequest` → registry →
   security policy (ALLOW/ASK/DENY) → approval → execution → audit events.
   The CLI `tools execute` command drives the identical code path.
-- **Typed tool registry**: 21 built-in tools (`filesystem.list|stat|read|
+- **Typed tool registry**: 22 built-in tools (`filesystem.list|stat|read|
   mkdir|write`, `process.list|info`, `system.info`, `shell.execute`,
   `network.fetch|webfetch`, `homeassistant.states|call`, `gui.screenshot|click|type`,
-  `voice.listen|speak|wake`, `vision.capture|describe`) with
+  `voice.listen|speak|wake`, `vision.capture|describe|compare`) with
   declared risk levels and JSON-schema validation; duplicate ids and invalid
   schemas are rejected at registration
 - **Risk levels + modes**: `safe`/`low`/`medium`/`high`/`critical` with a

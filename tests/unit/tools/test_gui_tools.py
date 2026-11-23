@@ -20,6 +20,7 @@ from greatsage.tools.gui_tools import (
     capture_primary_monitor_bmp,
 )
 from greatsage.tools.models import ToolCategory, ToolContext, ToolRisk
+from greatsage.vision.capture import encode_bmp
 
 WIN32 = sys.platform == "win32"
 
@@ -95,3 +96,152 @@ def test_screenshot_live(tmp_path: Path) -> None:
     assert result.output is not None
     assert out.exists() and out.stat().st_size == result.output["bytes"]
     assert result.output["saved_to"] == str(out)
+
+
+def _changed_frame(width: int = 16, height: int = 10) -> bytes:
+    data = bytearray(encode_bmp(width, height))
+    stride = ((width * 3 + 3) // 4) * 4
+    # One pixel near the top-left in a bottom-up frame.
+    offset = 54 + (height - 1) * stride
+    data[offset : offset + 3] = b"\xc8\x64\x32"
+    return bytes(data)
+
+
+def _fake_captures(monkeypatch: pytest.MonkeyPatch, frames: list[bytes]):
+    monkeypatch.setattr(sys, "platform", "win32")
+    iterator = iter(frames)
+    return lambda: (16, 10, next(iterator))
+
+
+def test_click_verify_reports_change(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    before = encode_bmp(16, 10)
+    after = _changed_frame()
+    capture = _fake_captures(monkeypatch, [before, after])
+    clicks: list[tuple[int, int, bool]] = []
+    waits: list[float] = []
+    tool = GuiClickTool(
+        capture=capture,
+        click=lambda x, y, right: clicks.append((x, y, right)),
+        sleep=waits.append,
+    )
+    result = tool.execute(
+        {"x": 5, "y": 6, "verify": True, "wait_ms": 120},
+        _context(tmp_path),
+    )
+    assert result.success is True
+    assert result.output is not None
+    assert result.output["verified"] is True
+    assert result.output["screen_changed"] is True
+    assert result.output["change_ratio"] > 0
+    assert clicks == [(5, 6, False)]
+    assert waits == [0.12]
+
+
+def test_click_verify_reports_nothing_changed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    frame = encode_bmp(16, 10)
+    capture = _fake_captures(monkeypatch, [frame, frame])
+    tool = GuiClickTool(capture=capture, click=lambda x, y, right: None, sleep=lambda _s: None)
+    result = tool.execute({"x": 1, "y": 1, "verify": True}, _context(tmp_path))
+    assert result.success is True
+    assert result.output is not None
+    assert result.output["screen_changed"] is False
+    assert result.output["summary"] == "NOTHING CHANGED"
+
+
+def test_click_verify_before_capture_failure_does_not_click(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    clicks: list[tuple[int, int, bool]] = []
+
+    def broken_capture():
+        raise OSError("no desktop")
+
+    tool = GuiClickTool(
+        capture=broken_capture,
+        click=lambda x, y, right: clicks.append((x, y, right)),
+    )
+    result = tool.execute({"x": 1, "y": 1, "verify": True}, _context(tmp_path))
+    assert result.success is False
+    assert "before action" in (result.error or "")
+    assert clicks == []
+
+
+def test_click_verify_after_capture_failure_is_honest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    calls = {"captures": 0}
+
+    def flaky_capture():
+        calls["captures"] += 1
+        if calls["captures"] == 1:
+            return (16, 10, encode_bmp(16, 10))
+        raise OSError("display went away")
+
+    tool = GuiClickTool(
+        capture=flaky_capture,
+        click=lambda x, y, right: None,
+        sleep=lambda _s: None,
+    )
+    result = tool.execute({"x": 1, "y": 1, "verify": True}, _context(tmp_path))
+    assert result.success is True
+    assert result.output is not None
+    assert result.output["verified"] is False
+    assert "after action" in result.output["verify_error"]
+
+
+def test_type_verify_reports_change(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    capture = _fake_captures(monkeypatch, [encode_bmp(16, 10), _changed_frame()])
+    typed: list[tuple[str, bool]] = []
+    tool = GuiTypeTool(
+        capture=capture,
+        type_text=lambda text, enter: typed.append((text, enter)),
+        sleep=lambda _s: None,
+    )
+    result = tool.execute(
+        {"text": "hello", "enter": True, "verify": True},
+        _context(tmp_path),
+    )
+    assert result.success is True
+    assert result.output is not None
+    assert result.output["verified"] is True
+    assert result.output["screen_changed"] is True
+    assert typed == [("hello", True)]
+
+
+def test_verify_options_validation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    tool = GuiClickTool(
+        capture=lambda: (16, 10, encode_bmp(16, 10)),
+        click=lambda x, y, right: None,
+    )
+    context = _context(tmp_path)
+    assert not tool.execute({"x": 1, "y": 1, "verify": "yes"}, context).success
+    assert not tool.execute(
+        {"x": 1, "y": 1, "verify": True, "wait_ms": -1}, context
+    ).success
+    assert not tool.execute(
+        {"x": 1, "y": 1, "verify": True, "wait_ms": True}, context
+    ).success
+
+
+def test_verify_is_opt_in(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    def unexpected_capture():
+        raise AssertionError("capture must not run without verify=true")
+
+    tool = GuiClickTool(capture=unexpected_capture, click=lambda x, y, right: None)
+    result = tool.execute({"x": 1, "y": 1}, _context(tmp_path))
+    assert result.success is True
+    assert result.output is not None
+    assert "verified" not in result.output

@@ -82,14 +82,18 @@ def encode_bmp(width: int, height: int, seed: int = 0) -> bytes:
 
 
 def parse_bmp_dimensions(image: bytes) -> tuple[int, int]:
-    """Read (width, height) from a BMP header; reject non-BMP input."""
+    """Read (width, height) from a BMP header; reject non-BMP input.
+
+    Negative DIB heights are valid: they mark top-down rows, which is what
+    the Windows GDI capture path writes. The returned height is absolute.
+    """
     if len(image) < BMP_HEADER_SIZE or image[0:2] != b"BM":
         raise VisionValidationError("not a BMP image (bad magic)")
     width = struct.unpack("<i", image[18:22])[0]
-    height = struct.unpack("<i", image[22:26])[0]
-    if width <= 0 or height <= 0:
-        raise VisionValidationError(f"invalid BMP dimensions: {width}x{height}")
-    return (width, height)
+    signed_height = struct.unpack("<i", image[22:26])[0]
+    if width <= 0 or signed_height == 0:
+        raise VisionValidationError(f"invalid BMP dimensions: {width}x{signed_height}")
+    return (width, abs(signed_height))
 
 
 class CaptureBackend(ABC):
