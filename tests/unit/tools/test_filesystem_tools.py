@@ -114,6 +114,76 @@ def test_read_missing_raises(tmp_path: Path) -> None:
         FilesystemReadTool().execute({"path": str(tmp_path / "nope")}, make_context(tmp_path))
 
 
+def test_read_line_range(tmp_path: Path) -> None:
+    target = tmp_path / "lines.txt"
+    target.write_bytes(b"one\ntwo\nthree\nfour\n")
+    result = FilesystemReadTool().execute(
+        {"path": str(target), "start_line": 2, "end_line": 3},
+        make_context(tmp_path),
+    )
+    assert result.output["content"] == "two\nthree\n"
+    assert result.output["line_start"] == 2
+    assert result.output["line_end"] == 3
+    assert result.output["truncated"] is False
+
+
+def test_read_line_range_beyond_eof_is_empty(tmp_path: Path) -> None:
+    target = tmp_path / "lines.txt"
+    target.write_text("one\ntwo\n", encoding="utf-8")
+    result = FilesystemReadTool().execute(
+        {"path": str(target), "start_line": 10}, make_context(tmp_path)
+    )
+    assert result.output["content"] == ""
+    assert result.output["line_start"] == 10
+    assert result.output["line_end"] == 9
+
+
+def test_read_line_range_validation(tmp_path: Path) -> None:
+    target = tmp_path / "lines.txt"
+    target.write_text("one\n", encoding="utf-8")
+    tool = FilesystemReadTool()
+    context = make_context(tmp_path)
+    with pytest.raises(ToolExecutionError, match="start_line"):
+        tool.execute({"path": str(target), "start_line": 0}, context)
+    with pytest.raises(ToolExecutionError, match="start_line"):
+        tool.execute({"path": str(target), "start_line": True}, context)
+    with pytest.raises(ToolExecutionError, match="end_line"):
+        tool.execute(
+            {"path": str(target), "start_line": 2, "end_line": 1}, context
+        )
+
+
+def test_read_line_range_respects_byte_cap(tmp_path: Path) -> None:
+    target = tmp_path / "lines.txt"
+    target.write_text("aaaa\nbbbb\ncccc\n", encoding="utf-8")
+    result = FilesystemReadTool().execute(
+        {"path": str(target), "start_line": 1, "end_line": 3},
+        make_context(tmp_path, max_bytes=7),
+    )
+    assert result.output["truncated"] is True
+    assert result.output["line_end"] == 1
+
+
+def test_read_line_range_rejects_binary(tmp_path: Path) -> None:
+    target = tmp_path / "blob.bin"
+    target.write_bytes(b"\x00binary\nsecond\n")
+    with pytest.raises(ToolExecutionError, match="binary"):
+        FilesystemReadTool().execute(
+            {"path": str(target), "start_line": 2}, make_context(tmp_path)
+        )
+
+
+def test_read_line_range_caps_oversized_line(tmp_path: Path) -> None:
+    target = tmp_path / "long.txt"
+    target.write_bytes(b"x" * (1024 * 1024 + 10))
+    result = FilesystemReadTool().execute(
+        {"path": str(target), "start_line": 1, "end_line": 1},
+        make_context(tmp_path, max_bytes=100),
+    )
+    assert result.output["content"] == ""
+    assert result.output["truncated"] is True
+
+
 def test_mkdir_creates_and_is_idempotent(tmp_path: Path) -> None:
     target = tmp_path / "new" / "dir"
     result = FilesystemMkdirTool().execute(

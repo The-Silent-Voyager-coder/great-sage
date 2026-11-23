@@ -319,7 +319,7 @@ Coverage:
 
 ## 6h. MCP transport baseline (post-Phase 10)
 
-- **1,330 tests collected** (1,329 passed, 1 skipped); `ruff` + `mypy` clean.
+- **1,336 tests collected** (1,335 passed, 1 skipped); `ruff` + `mypy` clean.
 - New suites: `tests/unit/mcp/test_mcp_protocol.py` (JSON-RPC initialize,
   notifications, tools/list allowlist + namespacing, tools/call delegation,
   denied/unknown tool behavior, stdio parse errors) and
@@ -341,7 +341,7 @@ Coverage:
 
 ## 6i. Verified desktop-action baseline
 
-- **1,330 tests collected** (1,329 passed, 1 skipped); `ruff` + `mypy` clean.
+- **1,336 tests collected** (1,335 passed, 1 skipped); `ruff` + `mypy` clean.
 - New suites: `tests/unit/vision/test_diff.py` (top-down and bottom-up BMP
   parsing, identical/changed frames, pixel threshold, dimension changes,
   region caps, invalid input) plus additions to `test_vision_tools.py` and
@@ -362,3 +362,6 @@ Coverage:
   invalid-regex rejection, and the skip rules for hidden, binary, and
   protected files. Candidate paths are resolved and checked for containment
   before reading, so a symlink inside the search root cannot escape it.
+- `filesystem.read` line ranges are covered for exact ranges, beyond-EOF
+  starts, invalid bounds, byte-cap truncation, oversized-line capping, and the
+  binary refusal when the requested range starts after line 1.
