@@ -24,6 +24,7 @@ from greatsage.vision.tools import (
     VisionCaptureTool,
     VisionCompareTool,
     VisionDescribeTool,
+    VisionLocateTool,
     register_vision_tools,
 )
 
@@ -86,6 +87,7 @@ def test_register_vision_tools() -> None:
     register_vision_tools(registry)
     assert "vision.capture" in registry.list_ids()
     assert "vision.describe" in registry.list_ids()
+    assert "vision.locate" in registry.list_ids()
     assert "vision.compare" in registry.list_ids()
     info = registry.describe("vision.capture")
     assert info["risk_level"] == "safe"
@@ -95,9 +97,11 @@ def test_register_vision_tools() -> None:
 def test_tools_declare_safe_read_risk() -> None:
     assert VisionCaptureTool().risk_level is ToolRisk.SAFE
     assert VisionDescribeTool().risk_level is ToolRisk.SAFE
+    assert VisionLocateTool().risk_level is ToolRisk.SAFE
     assert VisionCompareTool().risk_level is ToolRisk.SAFE
     assert VisionCaptureTool().PATH_ARGUMENTS == ("output_path",)
     assert VisionDescribeTool().PATH_ARGUMENTS == ("capture_path",)
+    assert VisionLocateTool().PATH_ARGUMENTS == ("output_path",)
     assert VisionCompareTool().PATH_ARGUMENTS == ("before_path", "after_path")
 
 
@@ -180,6 +184,45 @@ def test_describe_tool_reports_clickable_centers(tmp_path: Path) -> None:
     assert first["index"] == 0
     assert 0 <= first["center_x"] < 64
     assert 0 <= first["center_y"] < 40
+
+
+def test_locate_tool_captures_and_numbers_regions(tmp_path: Path) -> None:
+    result = VisionLocateTool().execute(
+        {"width": 32, "height": 20, "max_regions": 6},
+        make_context(tmp_path),
+    )
+    assert result.success
+    assert result.output is not None
+    assert result.output["capture_id"].startswith("cap_")
+    assert result.output["width"] == 32
+    assert len(result.output["regions"]) == 6
+    first = result.output["regions"][0]
+    assert first["index"] == 0
+    assert 0 <= first["center_x"] < 32
+    assert 0 <= first["center_y"] < 20
+    assert "image" not in result.output and "pixels" not in result.output
+
+
+def test_locate_tool_saves_capture(tmp_path: Path) -> None:
+    (tmp_path / "workspace").mkdir(exist_ok=True)
+    target = tmp_path / "workspace" / "locate.bmp"
+    result = VisionLocateTool().execute(
+        {"width": 16, "height": 10, "output_path": str(target)},
+        make_context(tmp_path),
+    )
+    assert result.success
+    assert result.output is not None
+    assert target.exists()
+    assert result.output["output_path"] == str(target)
+
+
+def test_locate_tool_rejects_invalid_output_and_regions(tmp_path: Path) -> None:
+    tool = VisionLocateTool()
+    context = make_context(tmp_path)
+    assert not tool.execute({"output_path": "relative.bmp"}, context).success
+    assert not tool.execute({"output_path": str(tmp_path / "shot.png")}, context).success
+    assert not tool.execute({"max_regions": 0}, context).success
+    assert not tool.execute({"max_regions": True}, context).success
 
 
 def test_compare_tool_reports_change(tmp_path: Path) -> None:

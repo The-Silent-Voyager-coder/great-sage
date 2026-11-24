@@ -317,7 +317,8 @@ def test_registry_access_and_defaults(tmp_path: Path) -> None:
                     "process.list",
                     "process.info", "system.info", "shell.execute",
                     "voice.listen", "voice.speak", "voice.wake",
-                    "vision.capture", "vision.describe", "vision.compare"):
+                    "vision.capture", "vision.describe", "vision.locate",
+                    "vision.compare"):
         assert tool_id in ids
     assert "filesystem.delete" not in ids
     assert "process.terminate" not in ids

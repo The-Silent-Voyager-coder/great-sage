@@ -30,7 +30,7 @@ from greatsage.vision.limits import (
     VisionLimits,
     default_limits,
 )
-from greatsage.vision.models import sanitize_output_path
+from greatsage.vision.models import VisionDescription, new_capture_id, sanitize_output_path
 
 
 def _failure(tool_id: str, error: str) -> ToolResult:
@@ -46,6 +46,20 @@ def _capture_id_from_path(path: Path) -> str:
     if _CAPTURE_ID_RE.match(stem):
         return stem
     return "cap_" + "0" * 32
+
+
+def _region_payload(
+    description: VisionDescription, width: int, height: int
+) -> list[dict[str, Any]]:
+    """Serialize grounded regions with stable indexes and pixel centers."""
+    regions: list[dict[str, Any]] = []
+    for index, region in enumerate(description.regions):
+        item = region.to_dict()
+        item["index"] = index
+        item["center_x"] = round((region.x + region.width / 2) * width)
+        item["center_y"] = round((region.y + region.height / 2) * height)
+        regions.append(item)
+    return regions
 
 
 class VisionCaptureTool(BaseTool):
@@ -189,7 +203,11 @@ class VisionDescribeTool(BaseTool):
         if width > MAX_WIDTH or height > MAX_HEIGHT:
             return _failure(self.id, f"frame {width}x{height} exceeds {MAX_WIDTH}x{MAX_HEIGHT}")
         max_regions = arguments.get("max_regions")
-        if max_regions is not None and (not isinstance(max_regions, int) or max_regions <= 0):
+        if max_regions is not None and (
+            isinstance(max_regions, bool)
+            or not isinstance(max_regions, int)
+            or max_regions <= 0
+        ):
             return _failure(self.id, "max_regions must be a positive integer")
         capture_id = _capture_id_from_path(path)
         try:
@@ -202,23 +220,139 @@ class VisionDescribeTool(BaseTool):
             )
         except Exception as exc:  # grounding failure is an honest tool failure
             return _failure(self.id, f"grounding failed: {exc}")
-        regions: list[dict[str, Any]] = []
-        for index, region in enumerate(description.regions):
-            item = region.to_dict()
-            item["index"] = index
-            item["center_x"] = round((region.x + region.width / 2) * width)
-            item["center_y"] = round((region.y + region.height / 2) * height)
-            regions.append(item)
         return ToolResult(
             request_id="",
             tool_id=self.id,
             success=True,
             output={
                 "summary": description.summary,
-                "regions": regions,
+                "regions": _region_payload(description, width, height),
                 "truncated": description.truncated,
             },
         )
+
+
+class VisionLocateTool(BaseTool):
+    """Capture and ground in one call; returns numbered clickable regions."""
+
+    id = "vision.locate"
+    name = "Vision locate"
+    description = (
+        "Capture the screen and return numbered grounded regions with pixel "
+        "centers (metadata only; optional .bmp output_path)."
+    )
+    version = "1.0.0"
+    risk_level = ToolRisk.SAFE
+    category = ToolCategory.SYSTEM
+    capabilities: tuple[str, ...] = ("observe",)
+    PATH_ARGUMENTS: tuple[str, ...] = ("output_path",)
+    input_schema: dict[str, object] = {
+        "type": "object",
+        "properties": {
+            "width": {"type": "integer"},
+            "height": {"type": "integer"},
+            "output_path": {"type": "string"},
+            "max_regions": {"type": "integer"},
+        },
+        "required": [],
+    }
+    output_schema: dict[str, object] = {
+        "type": "object",
+        "properties": {
+            "capture_id": {"type": "string"},
+            "backend": {"type": "string"},
+            "width": {"type": "integer"},
+            "height": {"type": "integer"},
+            "format": {"type": "string"},
+            "size_bytes": {"type": "integer"},
+            "summary": {"type": "string"},
+            "regions": {"type": "array"},
+            "truncated": {"type": "boolean"},
+            "output_path": {"type": "string"},
+        },
+        "required": [
+            "capture_id",
+            "backend",
+            "width",
+            "height",
+            "format",
+            "size_bytes",
+            "summary",
+            "regions",
+            "truncated",
+        ],
+    }
+
+    def __init__(
+        self,
+        limits: VisionLimits | None = None,
+        capture: CaptureManager | None = None,
+        grounding: GroundingStub | OllamaGrounding | None = None,
+    ) -> None:
+        self._limits = limits or default_limits()
+        self._capture = capture or CaptureManager(
+            limits=self._limits, backend=StubCaptureBackend()
+        )
+        self._grounding = grounding or GroundingStub(limits=self._limits)
+
+    def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
+        width = int(arguments.get("width", DEFAULT_WIDTH))
+        height = int(arguments.get("height", DEFAULT_HEIGHT))
+        try:
+            image, meta = self._capture.capture(width, height)
+        except VisionError as exc:
+            return _failure(self.id, str(exc))
+        capture_id = new_capture_id()
+        output: dict[str, Any] = {
+            "capture_id": capture_id,
+            "backend": meta["backend"],
+            "width": meta["width"],
+            "height": meta["height"],
+            "format": meta["format"],
+            "size_bytes": meta["size_bytes"],
+        }
+        raw_path = arguments.get("output_path")
+        if raw_path is not None:
+            try:
+                target = sanitize_output_path(str(raw_path))
+            except VisionError as exc:
+                return _failure(self.id, str(exc))
+            if not target.is_absolute():
+                return _failure(self.id, "output_path must be absolute")
+            if not target.parent.exists():
+                return _failure(
+                    self.id,
+                    "output directory does not exist; create it first through the file tools",
+                )
+            try:
+                target.write_bytes(image)
+            except OSError as exc:
+                return _failure(self.id, f"cannot write output_path: {exc}")
+            output["output_path"] = str(target)
+        max_regions = arguments.get("max_regions")
+        if max_regions is not None and (
+            isinstance(max_regions, bool)
+            or not isinstance(max_regions, int)
+            or max_regions <= 0
+        ):
+            return _failure(self.id, "max_regions must be a positive integer")
+        try:
+            description = self._grounding.describe(
+                capture_id,
+                meta["width"],
+                meta["height"],
+                image=image,
+                max_regions=max_regions,
+            )
+        except Exception as exc:  # grounding failure is an honest tool failure
+            return _failure(self.id, f"grounding failed: {exc}")
+        output["summary"] = description.summary
+        output["regions"] = _region_payload(
+            description, meta["width"], meta["height"]
+        )
+        output["truncated"] = description.truncated
+        _ = context
+        return ToolResult(request_id="", tool_id=self.id, success=True, output=output)
 
 
 class VisionCompareTool(BaseTool):
@@ -335,4 +469,7 @@ def register_vision_tools(
     """
     registry.register(VisionCaptureTool(limits=limits, capture=capture))
     registry.register(VisionDescribeTool(limits=limits, grounding=grounding))
+    registry.register(
+        VisionLocateTool(limits=limits, capture=capture, grounding=grounding)
+    )
     registry.register(VisionCompareTool(limits=limits))

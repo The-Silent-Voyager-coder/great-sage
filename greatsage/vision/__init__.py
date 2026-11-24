@@ -16,6 +16,7 @@ from greatsage.vision.tools import (
     VisionCaptureTool,
     VisionCompareTool,
     VisionDescribeTool,
+    VisionLocateTool,
     register_vision_tools,
 )
 
@@ -29,6 +30,7 @@ __all__ = [
     "VisionCaptureTool",
     "VisionCompareTool",
     "VisionDescribeTool",
+    "VisionLocateTool",
     "VisionDescription",
     "VisionLimits",
     "VisionRegion",

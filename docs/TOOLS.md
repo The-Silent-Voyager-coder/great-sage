@@ -177,7 +177,7 @@ the request is denied — a fail-closed default.
 | `gui.click` | high | click at coordinates (Windows-only, always ASK-gated); optional `verify=true` reports whether the screen changed |
 | `gui.type` | high | type into focused window, capped (Windows-only, always ASK-gated); optional `verify=true` reports whether the screen changed |
 | `voice.listen`/`speak`/`wake` | safe | transcription, synthesis, wake-word check (bounded, metadata-only outputs) |
-| `vision.capture`/`describe`/`compare` | safe | bounded screen frame + local VLM grounding (metadata + regions, never pixels); `compare` reports visual change/regions between two BMPs |
+| `vision.capture`/`describe`/`locate`/`compare` | safe | bounded screen frame + local VLM grounding (metadata + regions, never pixels); `locate` captures and grounds in one call with numbered pixel centers; `compare` reports visual change/regions between two BMPs |
 
 `filesystem.search` walks a file or directory with `followlinks=False`,
 resolves each candidate, and skips anything outside the search root,
@@ -198,6 +198,12 @@ starts later.
 non-global addresses (loopback, private, link-local, metadata, multicast,
 reserved); redirect targets are revalidated before they are followed. They
 never send credentials and never accept non-HTTP(S) schemes.
+
+`vision.locate` combines capture and grounding in one SAFE call: it returns
+the capture metadata, a bounded summary, and numbered regions with pixel
+`center_x`/`center_y` values ready for `gui.click`. An optional absolute
+`output_path` saves the BMP for later `vision.compare`; the path is still
+subject to allowed-root and protected-file policy before execution.
 
 Visual verification is opt-in and metadata-only. `gui.click`/`gui.type` with
 `verify=true` capture an ephemeral frame before and after the action (within
