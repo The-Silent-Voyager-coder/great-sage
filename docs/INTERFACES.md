@@ -642,6 +642,10 @@ class AgentApprovalProvider:   # greatsage/agent/approval.py
 - Cooperative cancellation: `cancel(task_id)` flips the token; checked
   between steps and before each tool call; approval gates also resolve to
   cancelled.
+- Conversational prompts (short closed greeting/thanks/identity text with no
+  action marker) set `AgentContext.tools_enabled=False`, so the request
+  carries `tools=None` exactly like `greatsage chat`; a stray tool proposal
+  is not executed and the answer notes it was skipped.
 
 ### CLI
 

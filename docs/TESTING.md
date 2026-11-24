@@ -319,7 +319,7 @@ Coverage:
 
 ## 6h. MCP transport baseline (post-Phase 10)
 
-- **1,339 tests collected** (1,338 passed, 1 skipped); `ruff` + `mypy` clean.
+- **1,370 tests collected** (1,369 passed, 1 skipped); `ruff` + `mypy` clean.
 - New suites: `tests/unit/mcp/test_mcp_protocol.py` (JSON-RPC initialize,
   notifications, tools/list allowlist + namespacing, tools/call delegation,
   denied/unknown tool behavior, stdio parse errors) and
@@ -341,7 +341,7 @@ Coverage:
 
 ## 6i. Verified desktop-action baseline
 
-- **1,339 tests collected** (1,338 passed, 1 skipped); `ruff` + `mypy` clean.
+- **1,370 tests collected** (1,369 passed, 1 skipped); `ruff` + `mypy` clean.
 - New suites: `tests/unit/vision/test_diff.py` (top-down and bottom-up BMP
   parsing, identical/changed frames, pixel threshold, dimension changes,
   region caps, invalid input) plus additions to `test_vision_tools.py` and
@@ -368,3 +368,12 @@ Coverage:
 - `filesystem.read` line ranges are covered for exact ranges, beyond-EOF
   starts, invalid bounds, byte-cap truncation, oversized-line capping, and the
   binary refusal when the requested range starts after line 1.
+
+## 6k. Conversational agent baseline
+
+- `greatsage/agent/intent.py` is covered by a 29-case table (13 conversational
+  prompts detected, 16 action/long/empty prompts that must keep tools).
+- Orchestrator coverage proves a conversational `AgentContext` sends
+  `AIRequest.tools=None` with a "no tools are available" system note, and that
+  a scripted stray `gui.click` proposal is never executed, leaves the run
+  `completed` with zero tool calls, and appends a skip note to the answer.

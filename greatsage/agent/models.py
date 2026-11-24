@@ -277,6 +277,7 @@ class AgentContext:
     tool_history: tuple[ToolCallResult, ...] = ()
     memory_references: tuple[dict[str, Any], ...] = ()
     system_note: str | None = None
+    tools_enabled: bool = True
 
 
 @dataclass

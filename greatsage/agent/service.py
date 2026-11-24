@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from greatsage.agent.approval import AgentApprovalProvider, NotifyingApprovalProvider
 from greatsage.agent.cancellation import CancellationToken
 from greatsage.agent.history import AgentHistoryError, AgentRunStore
+from greatsage.agent.intent import is_conversational
 from greatsage.agent.models import (
     AgentContext,
     AgentLimits,
@@ -158,6 +159,7 @@ class AgentService:
             conversation=(Message.user(prompt),),
             memory_references=self._retrieve_memory(prompt, session_id),
             system_note=_AGENT_SYSTEM_NOTE,
+            tools_enabled=not is_conversational(prompt),
         )
         status = AgentRunStatus(task_id=task.task_id, session_id=session_id)
         token = CancellationToken()
