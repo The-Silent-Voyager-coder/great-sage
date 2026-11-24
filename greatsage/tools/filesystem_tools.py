@@ -26,6 +26,7 @@ MAX_SEARCH_FILES = 2000
 MAX_SEARCH_FILE_BYTES = 262144
 MAX_SEARCH_TOTAL_BYTES = 8 * 1024 * 1024
 MAX_SEARCH_SECONDS = 10.0
+MAX_RANGED_LINE_BYTES = 1024 * 1024
 _SEARCH_SKIP_DIRS = frozenset(
     {
         ".git",
@@ -197,8 +198,11 @@ class FilesystemStatTool(BaseTool):
 class FilesystemReadTool(BaseTool):
     id = "filesystem.read"
     name = "Read a text file"
-    description = "Read a text file, bounded by the configured output limit."
-    version = "1.0.0"
+    description = (
+        "Read a text file, bounded by the configured output limit; optional "
+        "start_line/end_line select a 1-based line range."
+    )
+    version = "1.1.0"
     risk_level = ToolRisk.LOW
     capabilities = ("read",)
     PATH_ARGUMENTS = ("path",)
@@ -210,6 +214,14 @@ class FilesystemReadTool(BaseTool):
                 "type": "integer",
                 "description": "optional read cap (defaults to the tool limit)",
             },
+            "start_line": {
+                "type": "integer",
+                "description": "optional first line to return (1-based, default 1)",
+            },
+            "end_line": {
+                "type": "integer",
+                "description": "optional last line to return (inclusive)",
+            },
         },
         "required": ["path"],
     }
@@ -220,6 +232,8 @@ class FilesystemReadTool(BaseTool):
             "content": {"type": "string"},
             "bytes_read": {"type": "integer"},
             "truncated": {"type": "boolean"},
+            "line_start": {"type": "integer"},
+            "line_end": {"type": "integer"},
         },
         "required": ["path", "content", "bytes_read", "truncated"],
     }
@@ -246,21 +260,79 @@ class FilesystemReadTool(BaseTool):
         # Never let a bad context value turn read() into "read everything":
         # negative sizes are unbounded in Python's file API.
         limit = max(1, limit)
+
+        start_line = arguments.get("start_line", 1)
+        if (
+            isinstance(start_line, bool)
+            or not isinstance(start_line, int)
+            or start_line < 1
+        ):
+            raise ToolExecutionError("start_line must be an integer >= 1")
+        end_line = arguments.get("end_line")
+        if end_line is not None:
+            if isinstance(end_line, bool) or not isinstance(end_line, int):
+                raise ToolExecutionError("end_line must be an integer")
+            if end_line < start_line:
+                raise ToolExecutionError("end_line must be >= start_line")
+
+        if start_line == 1 and end_line is None:
+            with path.open("rb") as handle:
+                data = handle.read(limit + 1)
+            if b"\x00" in data[:4096]:
+                raise ToolExecutionError(f"refusing to read binary file: {path}")
+            truncated = len(data) > limit
+            content = data[:limit].decode("utf-8", errors="replace")
+            return ToolResult(
+                request_id="",
+                tool_id=self.id,
+                success=True,
+                output={
+                    "path": str(path),
+                    "content": content,
+                    "bytes_read": len(data[:limit]),
+                    "truncated": truncated,
+                },
+            )
+
+        selected: list[str] = []
+        bytes_read = 0
+        line_end = start_line - 1
+        truncated = False
         with path.open("rb") as handle:
-            data = handle.read(limit + 1)
-        if b"\x00" in data[:4096]:
-            raise ToolExecutionError(f"refusing to read binary file: {path}")
-        truncated = len(data) > limit
-        content = data[:limit].decode("utf-8", errors="replace")
+            probe = handle.read(4096)
+            if b"\x00" in probe:
+                raise ToolExecutionError(f"refusing to read binary file: {path}")
+            handle.seek(0)
+            line_number = 0
+            while True:
+                raw_line = handle.readline(MAX_RANGED_LINE_BYTES + 1)
+                if not raw_line:
+                    break
+                line_number += 1
+                if len(raw_line) > MAX_RANGED_LINE_BYTES and not raw_line.endswith(b"\n"):
+                    truncated = True
+                    break
+                if line_number < start_line:
+                    continue
+                if end_line is not None and line_number > end_line:
+                    break
+                if bytes_read + len(raw_line) > limit:
+                    truncated = True
+                    break
+                selected.append(raw_line.decode("utf-8", errors="replace"))
+                bytes_read += len(raw_line)
+                line_end = line_number
         return ToolResult(
             request_id="",
             tool_id=self.id,
             success=True,
             output={
                 "path": str(path),
-                "content": content,
-                "bytes_read": len(data[:limit]),
+                "content": "".join(selected),
+                "bytes_read": bytes_read,
                 "truncated": truncated,
+                "line_start": start_line,
+                "line_end": line_end,
             },
         )
 
