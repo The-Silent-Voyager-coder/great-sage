@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import pytest
 
@@ -505,6 +506,81 @@ def test_generate_keeps_string_values_for_string_schema_fields(fake_server) -> N
     response = provider.generate(request)
     assert response.tool_calls is not None
     assert response.tool_calls[0].arguments == {"path": ".", "content": "false"}
+
+
+READ_ARGUMENTS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string"},
+        "start_line": {"type": "integer"},
+        "max_bytes": {"type": "integer"},
+        "ratio": {"type": "number"},
+    },
+    "required": ["path"],
+}
+
+
+def _read_request() -> AIRequest:
+    return AIRequest(
+        messages=[Message.user("read")],
+        tools=[
+            ToolDefinition(
+                name="filesystem.read",
+                description="read",
+                input_schema=READ_ARGUMENTS_SCHEMA,
+            )
+        ],
+    )
+
+
+def _read_chat(arguments: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "model": "llama3:latest",
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"function": {"name": "filesystem.read", "arguments": arguments}}],
+        },
+        "done": True,
+    }
+
+
+def test_generate_coerces_numeric_strings_for_numeric_fields(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    fake_server.route(
+        "POST",
+        "/api/chat",
+        200,
+        _read_chat(
+            {"path": ".", "start_line": "3", "max_bytes": "1024", "ratio": "0.5"}
+        ),
+    )
+    response = provider.generate(_read_request())
+    assert response.tool_calls is not None
+    assert response.tool_calls[0].arguments == {
+        "path": ".",
+        "start_line": 3,
+        "max_bytes": 1024,
+        "ratio": 0.5,
+    }
+
+
+def test_generate_leaves_non_numeric_strings_for_validation(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    fake_server.route(
+        "POST", "/api/chat", 200, _read_chat({"path": ".", "max_bytes": "lots"})
+    )
+    response = provider.generate(_read_request())
+    assert response.tool_calls is not None
+    assert response.tool_calls[0].arguments == {"path": ".", "max_bytes": "lots"}
+
+
+def test_generate_keeps_numeric_text_in_string_fields(fake_server) -> None:
+    provider = _tool_provider(fake_server)
+    fake_server.route("POST", "/api/chat", 200, _read_chat({"path": "12345"}))
+    response = provider.generate(_read_request())
+    assert response.tool_calls is not None
+    assert response.tool_calls[0].arguments == {"path": "12345"}
 
 
 def test_stream_normalizes_schema_shaped_tool_arguments(fake_server) -> None:

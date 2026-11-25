@@ -39,7 +39,7 @@ human control surface around it:
   `mcp.allowed_tools` (read-only by default) through the normal
   `ToolService` policy/approval/audit pipeline; normal `greatsage chat`
   remains tool-free.
-- Full suite: **1,370 tests collected** (1,369 passed, 1 skipped); `ruff` and
+- Full suite: **1,373 tests collected** (1,372 passed, 1 skipped); `ruff` and
   `mypy` clean.
 
 ## Phase 4 — Tool System
