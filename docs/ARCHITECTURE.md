@@ -275,8 +275,9 @@ events + states; they never crash the runtime, the bus, or other providers.
   `tools` capability (`POST /api/show`, best-effort probe); otherwise the
   agent layer fails closed with an explicit capability error. Small-model
   tool arguments are normalized at the provider boundary (schema-shaped
-  payloads, `parameters` wrappers, and `"true"`/`"false"` strings for
-  schema-declared booleans); tool validation and the security pipeline still
+  payloads, `parameters` wrappers, `"true"`/`"false"` strings for
+  schema-declared booleans, and `"1024"`/`"0.5"` strings for schema-declared
+  integers/numbers); tool validation and the security pipeline still
   run unchanged, so normalization cannot grant an action. When
   Ollama is absent the provider reports UNAVAILABLE and the runtime keeps
   working.

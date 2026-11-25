@@ -75,8 +75,10 @@ Target: ≥80% coverage on `greatsage/` modules; 100% on the
   coding→CODE_EXECUTION preference, local-only preference), Ollama + OpenCode
   adapters against an in-process fake HTTP server (`conftest.py` →
   `ThreadingHTTPServer` with scripted routes), Ollama tool-argument
-  normalization (schema-shaped payloads, `parameters` wrappers, and
-  schema-declared boolean strings), benchmark, and the IntelligenceService
+  normalization (schema-shaped payloads, `parameters` wrappers,
+  schema-declared boolean strings, and schema-declared integer/number
+  strings — non-numeric text stays a string so validation rejects it),
+  benchmark, and the IntelligenceService
   facade (events, failure isolation, health registration).
   CLI integration tests added: `ai health|providers|benchmark` incl. `--json`
   and exit codes (0 healthy, 1 any-unhealthy, 2 config error).
@@ -319,7 +321,7 @@ Coverage:
 
 ## 6h. MCP transport baseline (post-Phase 10)
 
-- **1,370 tests collected** (1,369 passed, 1 skipped); `ruff` + `mypy` clean.
+- **1,373 tests collected** (1,372 passed, 1 skipped); `ruff` + `mypy` clean.
 - New suites: `tests/unit/mcp/test_mcp_protocol.py` (JSON-RPC initialize,
   notifications, tools/list allowlist + namespacing, tools/call delegation,
   denied/unknown tool behavior, stdio parse errors) and
@@ -341,7 +343,7 @@ Coverage:
 
 ## 6i. Verified desktop-action baseline
 
-- **1,370 tests collected** (1,369 passed, 1 skipped); `ruff` + `mypy` clean.
+- **1,373 tests collected** (1,372 passed, 1 skipped); `ruff` + `mypy` clean.
 - New suites: `tests/unit/vision/test_diff.py` (top-down and bottom-up BMP
   parsing, identical/changed frames, pixel threshold, dimension changes,
   region caps, invalid input) plus additions to `test_vision_tools.py` and

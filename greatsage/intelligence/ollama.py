@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import urllib.error
 from datetime import UTC, datetime
 from typing import Any
@@ -78,6 +79,9 @@ _SCHEMA_KEYWORDS = frozenset(
     }
 )
 
+_INTEGER_LITERAL = re.compile(r"[+-]?\d+")
+_NUMBER_LITERAL = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
+
 
 def _schema_accepts(arguments: dict[str, Any], schema: dict[str, Any] | None) -> bool:
     """Cheap check that arguments look like an instance, not the schema itself."""
@@ -118,6 +122,36 @@ def _coerce_boolean_strings(
             result[name] = True
         elif value == "false":
             result[name] = False
+    return result
+
+
+def _coerce_numeric_strings(
+    arguments: dict[str, Any], schema: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Repair the common `"1000"`/`"1.5"` model output for numeric fields.
+
+    Only values whose schema explicitly declares `type: integer`/`number` are
+    touched, and only plain numeric literals are converted. Bounds, enums, and
+    every other rule stay with the tool layer, so normalization cannot bypass
+    validation or the security policy.
+    """
+    if not isinstance(schema, dict):
+        return arguments
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return arguments
+    result = dict(arguments)
+    for name, spec in properties.items():
+        if name not in result or not isinstance(spec, dict):
+            continue
+        value = result[name]
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        if spec.get("type") == "integer" and _INTEGER_LITERAL.fullmatch(text):
+            result[name] = int(text)
+        elif spec.get("type") == "number" and _NUMBER_LITERAL.fullmatch(text):
+            result[name] = float(text)
     return result
 
 
@@ -167,7 +201,7 @@ def _normalise_tool_arguments(
             arguments = merged
             break
 
-    return _coerce_boolean_strings(arguments, schema)
+    return _coerce_numeric_strings(_coerce_boolean_strings(arguments, schema), schema)
 
 
 def _parse_tool_calls(
