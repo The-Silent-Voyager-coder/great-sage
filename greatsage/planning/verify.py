@@ -24,6 +24,7 @@ def _known_tool_ids() -> frozenset[str]:
         VisionCaptureTool,
         VisionCompareTool,
         VisionDescribeTool,
+        VisionLocateTool,
     )
     from greatsage.voice.tools import VoiceListenTool, VoiceSpeakTool, VoiceWakeTool
 
@@ -35,6 +36,7 @@ def _known_tool_ids() -> frozenset[str]:
         VisionCaptureTool,
         VisionCompareTool,
         VisionDescribeTool,
+        VisionLocateTool,
     )
     ids: set[str] = set()
     for tool_class in classes:
