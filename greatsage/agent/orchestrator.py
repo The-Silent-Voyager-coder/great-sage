@@ -133,10 +133,13 @@ class AgentOrchestrator:
                 "max_wall_time_seconds": limits.max_wall_time_seconds,
                 "max_single_tool_calls": limits.max_single_tool_calls,
                 "loop_detection_threshold": limits.loop_detection_threshold,
+                "tools_enabled": context.tools_enabled,
             },
         )
         try:
-            definitions = self._tool_definitions()
+            definitions = (
+                self._tool_definitions() if context.tools_enabled else None
+            )
             while True:
                 self._check_wall_clock(limits, started)
                 token.raise_if_cancelled()
@@ -160,7 +163,7 @@ class AgentOrchestrator:
                 # wall-clock expiry during generation cannot still complete.
                 self._check_wall_clock(limits, started)
                 token.raise_if_cancelled()
-                if response.tool_calls:
+                if response.tool_calls and context.tools_enabled:
                     calls = self._guard_calls(
                         response.tool_calls, limits, total_tool_calls, detector, task
                     )
@@ -239,6 +242,16 @@ class AgentOrchestrator:
                 final_text = response.content
                 if response.finish_reason is FinishReason.LENGTH:
                     final_text = (final_text or "") + "\n[generation length limit reached]"
+                note = "final response (no tool calls)"
+                if response.tool_calls and not context.tools_enabled:
+                    # Conversational run: a stray tool proposal is never
+                    # executed, and the user is told the tool was skipped.
+                    notice = (
+                        "[note: this run is conversational, so the requested "
+                        "tool call was not executed]"
+                    )
+                    final_text = f"{final_text}\n\n{notice}" if final_text else notice
+                    note = "conversational response (tool call ignored)"
                 state = AgentState.COMPLETED
                 final_step = AgentStep(
                     sequence=step_sequence,
@@ -246,7 +259,7 @@ class AgentOrchestrator:
                     started_at=step_started,
                     completed_at=datetime.now(UTC),
                     duration_ms=(time.monotonic() - step_started_mono) * 1000.0,
-                    note="final response (no tool calls)",
+                    note=note,
                 )
                 steps.append(final_step)
                 status.steps = len(steps)
@@ -326,7 +339,7 @@ class AgentOrchestrator:
         task: Any,
         context: AgentContext,
         messages: list[Message],
-        definitions: list[ToolDefinition],
+        definitions: list[ToolDefinition] | None,
         status: AgentRunStatus,
     ) -> AIResponse:
         request = AIRequest(
@@ -357,7 +370,10 @@ class AgentOrchestrator:
         """
         note = context.system_note
         references = context.memory_references
+        no_tools = "No tools are available for this run; answer directly in plain text."
         if not references:
+            if not context.tools_enabled:
+                return f"{note}\n\n{no_tools}" if note else no_tools
             return note
         lines: list[str] = []
         if note:
@@ -370,6 +386,9 @@ class AgentOrchestrator:
             content = str(reference.get("content", ""))[:200]
             memory_type = str(reference.get("type", "memory"))
             lines.append(f"- [{memory_type}] {content}")
+        if not context.tools_enabled:
+            lines.append("")
+            lines.append(no_tools)
         return "\n".join(lines)
 
     def _guard_calls(

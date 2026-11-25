@@ -59,6 +59,18 @@ ends `failed`; wall-clock exhaustion ends `timed_out`; limit exhaustion ends
 Tool calls carry structured arguments only (`id`, `tool_id`, `arguments`,
 `sequence`) — never an opaque shell string.
 
+### Conversational turns are tool-free
+
+A short, closed greeting/thanks/identity prompt with no action marker
+(`greatsage/agent/intent.py`) runs with `AIRequest.tools=None`, exactly like
+`greatsage chat`. The prompt is deterministic and deliberately narrow: any
+action word (files, read, click, run, screenshots, schedule, …) or a prompt
+over 160 characters keeps the full tool catalog, so the guard never removes a
+capability from an actual task. If such a run still receives a tool proposal
+(a stray model habit), the call is not executed, the run ends `completed` with
+the model's text, and the answer carries a short note that the tool was
+skipped. No approval is created and no tool event is published.
+
 The run's system note tells the model to answer directly when no tool is
 needed, avoid homeassistant/network/gui tools unless explicitly asked, and
 explain tool failures in plain language instead of printing raw error JSON.
